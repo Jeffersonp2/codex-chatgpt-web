@@ -17,6 +17,9 @@ const DEFAULT_STATE = Object.freeze({
   browserInteractionMode: "automatic",
   experimentalBiggerContext: false,
   zeroRiskProEnabled: false,
+  providerEnabled: true,
+  providerUrl: "http://127.0.0.1",
+  providerPort: 11435,
   browserSmokePassed: false,
   browserSmokeVersion: null,
   sidebarOpen: true,
@@ -48,10 +51,18 @@ function readState(filePath) {
       "showBrowserDuringTurns",
       "experimentalBiggerContext",
       "zeroRiskProEnabled",
+      "providerEnabled",
       "browserSmokePassed",
       "sidebarOpen",
     ]) {
       if (typeof state[key] !== "boolean") state[key] = DEFAULT_STATE[key];
+    }
+    if (typeof state.providerUrl !== "string"
+      || !["http://127.0.0.1", "http://localhost"].includes(state.providerUrl)) {
+      state.providerUrl = DEFAULT_STATE.providerUrl;
+    }
+    if (!Number.isInteger(state.providerPort) || state.providerPort < 1 || state.providerPort > 65_535) {
+      state.providerPort = DEFAULT_STATE.providerPort;
     }
     if (state.browserInteractionMode !== "automatic" && state.browserInteractionMode !== "manual") {
       state.browserInteractionMode = DEFAULT_STATE.browserInteractionMode;
