@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { loadConfig, type AppConfig } from "./config";
 import { availableChatGptWebModelRoutes, isChatGptWebModelSlug } from "./chatgpt-web-models";
+import { loadProviderRuntimeSettings, providerEndpoint } from "./provider-config";
 import { VERSION } from "./version";
 
 export interface ProviderServerOptions {
@@ -189,6 +190,20 @@ export function startProviderServer(
 
 if (import.meta.main) {
   const config = loadConfig();
-  startProviderServer(config);
-  await new Promise<void>(() => {});
+  const settings = loadProviderRuntimeSettings();
+  if (!settings.enabled) {
+    process.stdout.write("9Router provider is disabled in provider settings.\n");
+  } else {
+    const server = startProviderServer(config, {
+      host: settings.host,
+      port: settings.port,
+      log: false,
+    });
+    process.stdout.write(
+      `codex-chatgpt-web provider ${VERSION} listening on ${providerEndpoint({ ...settings, port: server.port })}\n`
+        + `upstream codex-chatgpt-web daemon: http://${config.host}:${config.port}/v1\n`
+        + `9Router provider type: OpenAI Responses compatible\n`,
+    );
+    await new Promise<void>(() => {});
+  }
 }
