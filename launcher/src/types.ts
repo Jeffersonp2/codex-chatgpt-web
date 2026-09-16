@@ -17,9 +17,6 @@ export interface LauncherState {
   browserInteractionMode: BrowserInteractionMode;
   experimentalBiggerContext: boolean;
   zeroRiskProEnabled: boolean;
-  providerEnabled: boolean;
-  providerUrl: string;
-  providerPort: number;
   sidebarOpen: boolean;
   sidebarWidth: number;
   browserSmokePassed?: boolean;
@@ -166,11 +163,6 @@ export interface LauncherApi {
     credentialsRequired: boolean;
     targetMode: BrowserInteractionMode;
   }>;
-  setProviderSettings(input: {
-    enabled: boolean;
-    url: string;
-    port: number;
-  }): Promise<LauncherState>;
   setPreference(
     key: "keepRunningOnClose" | "showBrowserDuringTurns",
     value: boolean,
