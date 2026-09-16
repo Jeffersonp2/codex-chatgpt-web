@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { stdout } from "node:process";
 import { loadConfig } from "./config";
+import { loadProviderRuntimeSettings, providerEndpoint } from "./provider-config";
 import { startProviderServer } from "./provider-server";
 import { startServer } from "./server";
 import { VERSION } from "./version";
@@ -9,14 +10,27 @@ async function runCombinedServe(args: string[]): Promise<void> {
   if (args.length > 0) throw new Error(`Unknown arguments: ${args.join(" ")}`);
 
   const config = loadConfig();
+  const providerSettings = loadProviderRuntimeSettings();
   const core = startServer(config);
 
   try {
-    const provider = startProviderServer(config, { log: false, unref: true });
-    stdout.write(
-      `codex-chatgpt-web ${VERSION} listening on http://${config.host}:${core.port}/v1 (${config.mode})\n`
-        + `9Router provider listening on http://127.0.0.1:${provider.port}/v1\n`,
-    );
+    if (providerSettings.enabled) {
+      const provider = startProviderServer(config, {
+        host: providerSettings.host,
+        port: providerSettings.port,
+        log: false,
+        unref: true,
+      });
+      stdout.write(
+        `codex-chatgpt-web ${VERSION} listening on http://${config.host}:${core.port}/v1 (${config.mode})\n`
+          + `9Router provider listening on ${providerEndpoint({ ...providerSettings, port: provider.port })}\n`,
+      );
+    } else {
+      stdout.write(
+        `codex-chatgpt-web ${VERSION} listening on http://${config.host}:${core.port}/v1 (${config.mode})\n`
+          + "9Router provider disabled by settings\n",
+      );
+    }
   } catch (error) {
     await core.stop(true);
     throw error;
