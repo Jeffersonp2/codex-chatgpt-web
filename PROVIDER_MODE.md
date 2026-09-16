@@ -1,6 +1,6 @@
 # Provider mode for 9Router
 
-This fork adds a local provider bridge for using ChatGPT Web models behind 9Router without letting `codex-chatgpt-web` own Codex's `openai_base_url`.
+This fork adds a local provider bridge for using ChatGPT Web models behind 9Router without requiring 9Router to talk directly to the ChatGPT browser transport.
 
 ## Architecture
 
@@ -22,19 +22,77 @@ Codex
 
 The provider bridge intentionally keeps the native OpenAI Responses protocol. This preserves Codex turn metadata, streaming, reasoning events, tool metadata and compaction requests.
 
-## Requirements
+## Single-process runtime
 
-The normal `codex-chatgpt-web` launcher/daemon must already be configured and running so the browser session is authenticated.
+The normal runtime now starts both local endpoints in one process:
 
-The provider bridge reads the existing `~/.codex-chatgpt-web/config.json` configuration and does not modify Codex configuration.
+```powershell
+bun run start
+```
 
-## Start provider mode
+or equivalently:
 
-From the repository:
+```powershell
+bun run 9router
+```
+
+Expected output:
+
+```text
+codex-chatgpt-web 5.0.7 listening on http://127.0.0.1:17841/v1 (full)
+9Router provider listening on http://127.0.0.1:11435/v1
+```
+
+`17841` is the internal ChatGPT Web Responses daemon. `11435` is the provider endpoint intended for 9Router.
+
+The standalone diagnostic command remains available:
 
 ```powershell
 bun run provider
 ```
+
+It is normally unnecessary once the combined runtime is used.
+
+## Desktop launcher, tray and Windows startup
+
+The existing Electron launcher supervises the same packaged runtime, so the provider endpoint is started automatically together with the normal daemon.
+
+The launcher already supports:
+
+- Windows system tray operation;
+- keeping the runtime active when the main window is closed;
+- starting at Windows login with `--hidden`;
+- restarting the supervised runtime after failures.
+
+The packaged launcher uses the combined runtime entrypoint, so no PowerShell window is required for normal use.
+
+For a new launcher profile, `Launch at login` and `Keep running on close` default to enabled. If either setting was disabled previously, enable it again in Launcher Settings.
+
+## Build the Windows app
+
+Install the launcher dependencies once:
+
+```powershell
+cd D:\LLMs\codex-chatgpt-web\launcher
+bun install --frozen-lockfile
+```
+
+Then build the Windows installer from the repository root:
+
+```powershell
+cd D:\LLMs\codex-chatgpt-web
+bun run app:package
+```
+
+The Windows installer is written under:
+
+```text
+D:\LLMs\codex-chatgpt-web\launcher\release\
+```
+
+Install it normally. After setup, keep `Launch at login` and `Keep running on close` enabled. Closing the main window leaves the app in the system tray and keeps both `17841` and `11435` available.
+
+## Provider endpoint
 
 Default provider URL:
 
@@ -42,24 +100,18 @@ Default provider URL:
 http://127.0.0.1:11435/v1
 ```
 
-Default upstream daemon URL:
-
-```text
-http://127.0.0.1:17841/v1
-```
-
 Change the provider port if required:
 
 ```powershell
 $env:CODEX_WEB_PROVIDER_PORT="11435"
-bun run provider
+bun run start
 ```
 
 Optional local API key:
 
 ```powershell
 $env:CODEX_WEB_PROVIDER_API_KEY="change-me"
-bun run provider
+bun run start
 ```
 
 When no API key is configured, the bridge is still bound to `127.0.0.1` only.
@@ -69,13 +121,14 @@ When no API key is configured, the bridge is still bound to `127.0.0.1` only.
 Create an OpenAI-compatible provider that uses the Responses API.
 
 ```text
-Name: ChatGPT Web Local
+Name: ChatGPT Web
+Prefix: cgw
+API Type: Responses
 Base URL: http://127.0.0.1:11435/v1
-API key: change-me   (only if CODEX_WEB_PROVIDER_API_KEY is set)
-Protocol: OpenAI Responses
+API Key: local
 ```
 
-The provider exposes only the `chatgpt-web/*` model namespace. It does not expose or proxy native OpenAI models because 9Router should remain the only router.
+The provider exposes only the `chatgpt-web/*` model namespace. It does not expose or proxy native OpenAI models because 9Router should remain the router in front of this provider.
 
 Typical model IDs are:
 
@@ -94,13 +147,13 @@ The exact list depends on the ChatGPT account capabilities discovered by the lau
 Health:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:11435/healthz
+Invoke-RestMethod http://127.0.0.1:11435/healthz | ConvertTo-Json -Depth 10
 ```
 
 Models:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:11435/v1/models
+Invoke-RestMethod http://127.0.0.1:11435/v1/models | ConvertTo-Json -Depth 10
 ```
 
 The provider bridge deliberately rejects `/v1/chat/completions`. Configure 9Router to send `/v1/responses`; converting Codex traffic to legacy Chat Completions may discard metadata required by the browser-backed harness.
