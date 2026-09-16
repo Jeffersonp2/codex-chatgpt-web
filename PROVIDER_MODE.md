@@ -24,7 +24,7 @@ The provider bridge intentionally keeps the native OpenAI Responses protocol. Th
 
 ## Single-process runtime
 
-The normal runtime now starts both local endpoints in one process:
+The normal runtime starts the ChatGPT Web daemon and, when enabled, the 9Router provider in one process:
 
 ```powershell
 bun run start
@@ -36,14 +36,14 @@ or equivalently:
 bun run 9router
 ```
 
-Expected output:
+Default output when the provider is enabled:
 
 ```text
 codex-chatgpt-web 5.0.7 listening on http://127.0.0.1:17841/v1 (full)
 9Router provider listening on http://127.0.0.1:11435/v1
 ```
 
-`17841` is the internal ChatGPT Web Responses daemon. `11435` is the provider endpoint intended for 9Router.
+`17841` is the internal ChatGPT Web Responses daemon. `11435` is the default provider endpoint intended for 9Router.
 
 The standalone diagnostic command remains available:
 
@@ -53,9 +53,40 @@ bun run provider
 
 It is normally unnecessary once the combined runtime is used.
 
+## Provider settings in the desktop app
+
+The desktop launcher adds a **9Router Provider** section under **Settings**. It provides:
+
+- an Enable/Disable switch;
+- local provider URL;
+- provider port;
+- a preview of the final `/v1` endpoint;
+- a Save button.
+
+The settings are stored in:
+
+```text
+~/.codex-chatgpt-web/provider.json
+```
+
+Default configuration:
+
+```json
+{
+  "version": 1,
+  "enabled": true,
+  "url": "http://127.0.0.1",
+  "port": 11435
+}
+```
+
+For safety, the UI accepts only `http://127.0.0.1` or `http://localhost`; the listener remains IPv4 loopback-only and is not exposed directly to the LAN.
+
+Changes take effect when Codex Web GPT is restarted. Disabling the provider leaves the normal ChatGPT Web daemon available but does not open the 9Router provider port.
+
 ## Desktop launcher, tray and Windows startup
 
-The existing Electron launcher supervises the same packaged runtime, so the provider endpoint is started automatically together with the normal daemon.
+The existing Electron launcher supervises the same packaged runtime, so the provider endpoint is started automatically together with the normal daemon when the provider is enabled.
 
 The launcher already supports:
 
@@ -84,13 +115,13 @@ cd D:\LLMs\codex-chatgpt-web
 bun run app:package
 ```
 
-The Windows installer is written under:
+The distributable Windows artifacts are written under:
 
 ```text
-D:\LLMs\codex-chatgpt-web\launcher\release\
+D:\LLMs\codex-chatgpt-web\launcher\artifacts\
 ```
 
-Install it normally. After setup, keep `Launch at login` and `Keep running on close` enabled. Closing the main window leaves the app in the system tray and keeps both `17841` and `11435` available.
+Install the `codex-web-gpt-*-win-x64.exe` file normally. After setup, keep `Launch at login` and `Keep running on close` enabled. Closing the main window leaves the app in the system tray and keeps the configured runtime available.
 
 ## Provider endpoint
 
@@ -100,21 +131,16 @@ Default provider URL:
 http://127.0.0.1:11435/v1
 ```
 
-Change the provider port if required:
+Change the URL, port, or enabled state from the launcher's Settings screen. Advanced users can also edit `provider.json` while the application is stopped.
 
-```powershell
-$env:CODEX_WEB_PROVIDER_PORT="11435"
-bun run start
-```
-
-Optional local API key:
+Optional local API key remains available through the environment:
 
 ```powershell
 $env:CODEX_WEB_PROVIDER_API_KEY="change-me"
 bun run start
 ```
 
-When no API key is configured, the bridge is still bound to `127.0.0.1` only.
+When no API key is configured, the bridge is still restricted to the loopback interface.
 
 ## 9Router configuration
 
@@ -127,6 +153,8 @@ API Type: Responses
 Base URL: http://127.0.0.1:11435/v1
 API Key: local
 ```
+
+If you change the provider URL/port in Codex Web GPT Settings, use the resulting endpoint shown there as the 9Router Base URL.
 
 The provider exposes only the `chatgpt-web/*` model namespace. It does not expose or proxy native OpenAI models because 9Router should remain the router in front of this provider.
 
@@ -144,7 +172,7 @@ The exact list depends on the ChatGPT account capabilities discovered by the lau
 
 ## Test
 
-Health:
+Health with the default endpoint:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:11435/healthz | ConvertTo-Json -Depth 10
@@ -160,4 +188,4 @@ The provider bridge deliberately rejects `/v1/chat/completions`. Configure 9Rout
 
 ## Safety boundary
 
-Provider mode is local-only by default and strips the provider Authorization header before forwarding requests to the internal `codex-chatgpt-web` daemon. A local 9Router API key therefore cannot accidentally be forwarded as an OpenAI credential.
+Provider mode is local-only and strips the provider Authorization header before forwarding requests to the internal `codex-chatgpt-web` daemon. A local 9Router API key therefore cannot accidentally be forwarded as an OpenAI credential.
