@@ -1,5 +1,5 @@
 {
-  "name": "teamsix-ai-bridge-launcher",
+  "name": "codex-web-gpt-launcher",
   "version": "5.0.7",
   "private": true,
   "description": "TEAMSIX desktop bridge for routing ChatGPT Web through 9Router while preserving Codex tools and plugins",
