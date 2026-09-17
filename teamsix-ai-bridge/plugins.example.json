@@ -1,25 +1,25 @@
 {
   "plugins": [
     {
-      "id": "example-api",
-      "name": "Example API",
+      "id": "example",
+      "name": "Example HTTP Plugin",
       "enabled": false,
-      "baseUrl": "https://api.example.com/",
-      "apiKeyEnv": "EXAMPLE_API_KEY",
-      "apiKeyHeader": "Authorization",
+      "baseUrl": "https://example.com/api/",
+      "apiKeyEnv": "EXAMPLE_PLUGIN_API_KEY",
+      "apiKeyHeader": "authorization",
       "apiKeyPrefix": "Bearer ",
       "tools": [
         {
           "name": "lookup",
-          "description": "Look up one object by id",
-          "method": "GET",
-          "path": "v1/objects/{id}",
+          "description": "Example optional TEAMSIX HTTP Plugin Hub tool. Codex-supplied plugins/tools are relayed separately and do not need to be declared here.",
+          "method": "POST",
+          "path": "lookup",
           "inputSchema": {
             "type": "object",
             "properties": {
-              "id": { "type": "string" }
+              "query": { "type": "string" }
             },
-            "required": ["id"],
+            "required": ["query"],
             "additionalProperties": false
           }
         }
