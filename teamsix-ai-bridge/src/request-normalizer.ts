@@ -15,6 +15,8 @@ interface CodexMetadata {
   [key: string]: unknown;
 }
 
+const DEFAULT_FUNCTION_NAMESPACE = "functions";
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -88,11 +90,8 @@ function normalizeInput(
       content: [{ type: "input_text", text: String(raw) }],
     };
 
-    // A native Codex Responses request already carries authoritative message ids and per-message
-    // turn provenance. Historical assistant/user/developer messages may belong to older turns.
-    // Rewriting all of them to the current turn breaks resume, environment authority and
-    // compaction. Preserve the native wire item byte-semantically (after structuredClone) and let
-    // the embedded browser runtime validate Codex's own provenance exactly as it normally does.
+    // Native Codex history already carries authoritative ids and per-message turn provenance.
+    // Historical messages may belong to older turns; never stamp the current turn over them.
     if (preserveNativeProvenance && existing) return { ...item };
 
     if (item.type !== "message") return { ...item };
@@ -109,9 +108,155 @@ function normalizeInput(
   });
 }
 
-function normalizeTools(value: unknown): ToolDefinition[] {
-  if (!Array.isArray(value)) return [];
-  return value.map(item => asRecord(item)).filter((item): item is ToolDefinition => Boolean(item));
+function namespaceName(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() && value !== DEFAULT_FUNCTION_NAMESPACE
+    ? value.trim()
+    : undefined;
+}
+
+function toolParameters(tool: Record<string, unknown>): unknown {
+  return tool.parameters
+    ?? tool.input_schema
+    ?? { type: "object", properties: {} };
+}
+
+function functionTool(tool: Record<string, unknown>, namespace?: string): ToolDefinition | undefined {
+  const nested = asRecord(tool.function);
+  const source = nested ?? tool;
+  const nativeName = typeof source.name === "string" ? source.name.trim() : "";
+  if (!nativeName) return undefined;
+  const name = namespace ? `${namespace}__${nativeName}` : nativeName;
+  return {
+    type: "function",
+    name,
+    description: typeof source.description === "string" ? source.description : "",
+    parameters: toolParameters(source),
+    teamsixWireName: nativeName,
+    teamsixWireType: "function",
+    ...(namespace ? { teamsixNamespace: namespace } : {}),
+  };
+}
+
+function customTool(tool: Record<string, unknown>): ToolDefinition | undefined {
+  const name = typeof tool.name === "string" ? tool.name.trim() : "";
+  if (!name) return undefined;
+  return {
+    type: "function",
+    name,
+    description: typeof tool.description === "string" ? tool.description : "",
+    parameters: {
+      type: "object",
+      properties: {
+        input: {
+          type: "string",
+          description: "Raw input for this Codex custom/freeform tool.",
+        },
+      },
+      required: ["input"],
+      additionalProperties: false,
+    },
+    teamsixWireName: name,
+    teamsixWireType: "custom",
+  };
+}
+
+function toolSearch(tool: Record<string, unknown>): ToolDefinition {
+  return {
+    type: "function",
+    name: "tool_search",
+    description: typeof tool.description === "string"
+      ? tool.description
+      : "Search for additional Codex/plugin tools to load for the next tool round.",
+    parameters: asRecord(tool.parameters) ?? {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search query for tools to load." },
+        limit: { type: "number", description: "Maximum number of tools to return." },
+      },
+      required: ["query"],
+    },
+    teamsixWireName: "tool_search",
+    teamsixWireType: "tool_search",
+  };
+}
+
+function flattenToolSpecs(specs: unknown[]): ToolDefinition[] {
+  const out: ToolDefinition[] = [];
+  for (const raw of specs) {
+    const tool = asRecord(raw);
+    if (!tool) continue;
+
+    if (tool.type === "function") {
+      const mapped = functionTool(tool);
+      if (mapped) out.push(mapped);
+      continue;
+    }
+
+    if (tool.type === "namespace" && Array.isArray(tool.tools)) {
+      const namespace = namespaceName(tool.name);
+      for (const innerRaw of tool.tools) {
+        const inner = asRecord(innerRaw);
+        if (!inner) continue;
+        if (inner.type === "function") {
+          const mapped = functionTool(inner, namespace);
+          if (mapped) out.push(mapped);
+        } else if (tool.name === DEFAULT_FUNCTION_NAMESPACE && inner.type === "custom") {
+          const mapped = customTool(inner);
+          if (mapped) out.push(mapped);
+        }
+      }
+      continue;
+    }
+
+    if (tool.type === "custom") {
+      const mapped = customTool(tool);
+      if (mapped) out.push(mapped);
+      continue;
+    }
+
+    if (tool.type === "tool_search") {
+      out.push(toolSearch(tool));
+      continue;
+    }
+
+    // OpenAI-hosted tools are not local Codex capabilities and cannot be round-tripped as a
+    // client-executed call through 9Router. Image generation gets its own TEAMSIX provider later.
+    if (tool.type === "web_search" || tool.type === "web_search_preview" || tool.type === "image_generation") {
+      continue;
+    }
+
+    // Future/unknown named client tools (including computer-use variants) are relayed as ordinary
+    // function calls. Preserve their name and whichever input schema they provide.
+    if (typeof tool.name === "string") {
+      const mapped = functionTool(tool);
+      if (mapped) out.push(mapped);
+    }
+  }
+
+  const seen = new Set<string>();
+  return out.filter(tool => {
+    const name = typeof tool.name === "string" ? tool.name : "";
+    if (!name || seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
+}
+
+function collectToolSpecs(body: Record<string, unknown>): unknown[] {
+  const specs: unknown[] = Array.isArray(body.tools) ? [...body.tools] : [];
+  if (!Array.isArray(body.input)) return specs;
+
+  for (const raw of body.input) {
+    const item = asRecord(raw);
+    if (!item) continue;
+    if (item.type === "additional_tools" && Array.isArray(item.tools)) {
+      specs.push(...item.tools);
+    }
+    if (item.type === "tool_search_output" && Array.isArray(item.tools)) {
+      specs.push(...item.tools);
+    }
+  }
+  return specs;
 }
 
 export function normalizeResponsesRequest(raw: unknown): NormalizedRequest {
@@ -128,7 +273,7 @@ export function normalizeResponsesRequest(raw: unknown): NormalizedRequest {
 
   body.input = normalizeInput(body.input, identity.turnId, native);
   body.stream = body.stream === true;
-  const tools = normalizeTools(body.tools);
+  const tools = flattenToolSpecs(collectToolSpecs(body));
 
   return {
     body,
