@@ -1,0 +1,29 @@
+{
+  "plugins": [
+    {
+      "id": "example-api",
+      "name": "Example API",
+      "enabled": false,
+      "baseUrl": "https://api.example.com/",
+      "apiKeyEnv": "EXAMPLE_API_KEY",
+      "apiKeyHeader": "Authorization",
+      "apiKeyPrefix": "Bearer ",
+      "tools": [
+        {
+          "name": "lookup",
+          "description": "Look up one object by id",
+          "method": "GET",
+          "path": "v1/objects/{id}",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    }
+  ]
+}
