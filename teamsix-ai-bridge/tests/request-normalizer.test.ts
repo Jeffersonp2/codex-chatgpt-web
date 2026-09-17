@@ -44,6 +44,23 @@ describe("request normalizer", () => {
     expect(outputMetadata).toEqual(metadata);
   });
 
+  test("accepts native Codex metadata already supplied as an object", () => {
+    const normalized = normalizeResponsesRequest({
+      model: "chatgpt-web/medium",
+      client_metadata: {
+        "x-codex-turn-metadata": {
+          thread_id: "thread_object",
+          turn_id: "turn_object",
+          sandbox: "none",
+          workspaces: {},
+        },
+      },
+      input: "hello",
+    });
+    expect(normalized.nativeCodexIdentity).toBe(true);
+    expect(normalized.identity).toEqual({ threadId: "thread_object", turnId: "turn_object" });
+  });
+
   test("maps 9Router provider prefixes without changing the ChatGPT Web model", () => {
     expect(mapTeamsixModelToUpstream("teamsix/chatgpt-web/high")).toBe("chatgpt-web/high");
     expect(mapTeamsixModelToUpstream("cgw/chatgpt-web/medium")).toBe("chatgpt-web/medium");
