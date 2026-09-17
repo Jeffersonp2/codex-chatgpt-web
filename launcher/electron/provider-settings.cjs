@@ -1,3 +1,4 @@
+const os = require("node:os");
 const path = require("node:path");
 const fs = require("node:fs");
 const { writePrivateFileAtomic } = require("./atomic-file.cjs");
@@ -73,10 +74,45 @@ function writeProviderSettings(coreHome, value) {
   return settings;
 }
 
+function resolveUserPath(value) {
+  if (value === "~") return os.homedir();
+  if (value.startsWith("~/") || value.startsWith("~\\")) {
+    return path.resolve(os.homedir(), value.slice(2));
+  }
+  return path.resolve(value);
+}
+
+function providerCoreHome() {
+  const configured = process.env.CODEX_CHATGPT_WEB_HOME?.trim();
+  return configured ? resolveUserPath(configured) : path.join(os.homedir(), ".codex-chatgpt-web");
+}
+
+function registerProviderSettingsIpc() {
+  let electron;
+  try {
+    electron = require("electron");
+  } catch {
+    return false;
+  }
+  const ipcMain = electron && typeof electron === "object" ? electron.ipcMain : null;
+  if (!ipcMain || typeof ipcMain.handle !== "function") return false;
+
+  const registrationKey = Symbol.for("codex-web-gpt.provider-settings-ipc");
+  if (globalThis[registrationKey]) return true;
+
+  ipcMain.handle("launcher:provider-settings-read", () => readProviderSettings(providerCoreHome()));
+  ipcMain.handle("launcher:provider-settings-write", (_event, value) => writeProviderSettings(providerCoreHome(), value));
+  globalThis[registrationKey] = true;
+  return true;
+}
+
+registerProviderSettingsIpc();
+
 module.exports = {
   DEFAULT_PROVIDER_SETTINGS,
   providerSettingsPath,
   readProviderSettings,
+  registerProviderSettingsIpc,
   validateProviderSettings,
   writeProviderSettings,
 };
