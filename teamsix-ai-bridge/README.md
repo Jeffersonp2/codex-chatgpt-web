@@ -1,122 +1,118 @@
 # TEAMSIX AI Bridge
 
-A local OpenAI Responses-compatible provider designed to sit behind 9Router and reuse the existing `codex-chatgpt-web` browser runtime without making that runtime own Codex routing.
-
-## Architecture
+TEAMSIX AI Bridge is a desktop OpenAI Responses-compatible bridge built specifically for this route:
 
 ```text
-Codex / Cursor / other Responses clients
-                 |
-                 v
-              9Router
-                 |
-                 v
-        TEAMSIX AI Bridge :11436
-          |             |
-          |             +--> Plugin Hub (optional HTTP plugins)
-          |
-          v
- codex-chatgpt-web :17841
-          |
-          v
-      ChatGPT Web
+ChatGPT Codex
+      |
+      v
+   9Router
+      |
+      v
+TEAMSIX AI Bridge :11436
+      |
+      +-- ChatGPT Web browser/login/runtime (embedded)
+      +-- Codex tool + plugin relay
+      +-- sessions / compaction / streaming
+      +-- optional TEAMSIX HTTP Plugin Hub
+      |
+      v
+ ChatGPT Web
 ```
+
+## One user-facing app
+
+The final desktop package is **TEAMSIX AI Bridge**. You do not need to launch a separate `codex-chatgpt-web` application.
+
+Internally TEAMSIX reuses the proven browser/runtime code from this fork. The internal transport may still use a private loopback port, but its lifecycle is owned by TEAMSIX and is not a separate app the user has to install, configure, or start.
 
 Responsibilities:
 
-- **9Router** owns provider selection, API keys, routing, quotas and aliases.
-- **TEAMSIX AI Bridge** owns ChatGPT Web request normalization, session/turn identity, tool translation and optional plugins.
-- **Codex** remains the executor for local filesystem, terminal, build, Git and project tools.
-- **codex-chatgpt-web** remains the browser transport to ChatGPT Web.
+- **ChatGPT Codex** remains the local executor: filesystem, terminal, Git, builds, Computer Use and every tool/plugin that Codex exposes in the Responses request.
+- **9Router** remains the only router/provider manager and keeps ownership of Codex's API route.
+- **TEAMSIX AI Bridge** owns ChatGPT Web login/browser transport, request normalization, turn/session identity, context/compaction, streaming and the tool relay.
+- **ChatGPT Web** is the model/browser backend.
 
-## Why this fixes the current integration
+## Why tools and Codex plugins can work without Codex Native2
 
-The browser adapter requires native Codex `thread_id` / `turn_id` metadata. TEAMSIX preserves real Codex metadata when present and synthesizes valid identities for generic Responses clients. In `bridge` tool mode, the model is given a strict tool contract and TEAMSIX converts a requested local action back into a native Responses `function_call`, so Codex can execute the tool on the user's machine without requiring the ChatGPT `Codex Native2` connector.
+The embedded ChatGPT transport runs in `browser-only` mode. TEAMSIX receives the original Responses `tools` array from Codex and converts it into a strict browser-model tool contract.
 
-## Run
+When ChatGPT Web chooses a Codex/local tool:
 
-Requirements: Bun 1.4+ and a running `codex-chatgpt-web` daemon on `http://127.0.0.1:17841`.
-
-```powershell
-cd D:\LLMs\codex-chatgpt-web
-git fetch origin
-git switch feature/teamsix-ai-bridge
-git pull
-
-cd .\teamsix-ai-bridge
-bun install
-bun run typecheck
-bun test
-bun run start
+```text
+ChatGPT Web
+   |
+   | TEAMSIX_TOOL_CALL
+   v
+TEAMSIX
+   |
+   | Responses function_call
+   v
+9Router
+   |
+   v
+Codex executes the real tool/plugin locally
+   |
+   | function_call_output
+   v
+9Router -> TEAMSIX -> ChatGPT Web continues
 ```
 
-Defaults:
+This means the ChatGPT custom connector `Codex Native2` is not required for TEAMSIX bridge mode. Codex keeps its own permission model and remains responsible for the actual local action.
 
-- API: `http://127.0.0.1:11436/v1`
-- Dashboard: `http://127.0.0.1:11436/`
-- ChatGPT Web upstream: `http://127.0.0.1:17841/v1`
-- Tool mode: `bridge`
+If a connected Codex plugin itself is not authenticated or fails to load in Codex, TEAMSIX cannot create that external authorization. Once Codex exposes the plugin/tool to the Responses turn, TEAMSIX can relay it like the other Codex tools.
 
-## 9Router provider
+## Public endpoint for 9Router
 
-Create an OpenAI-compatible provider using **Responses API**:
+Default endpoint:
 
-- Name: `TEAMSIX AI Bridge`
-- Prefix: `teamsix`
-- Base URL: `http://127.0.0.1:11436/v1`
-- API key: blank unless `TEAMSIX_API_KEY` is configured
-- Default model: `teamsix/chatgpt-web/high`
-
-Import `/models`. The public model IDs are dynamically derived from the ChatGPT Web upstream and are exposed as `teamsix/chatgpt-web/*`.
-
-## Direct test
-
-```powershell
-$Body = @{
-  model = "teamsix/chatgpt-web/high"
-  input = "Responda exatamente: TEAMSIX OK"
-  stream = $false
-} | ConvertTo-Json -Depth 20
-
-Invoke-RestMethod `
-  -Uri "http://127.0.0.1:11436/v1/responses" `
-  -Method POST `
-  -ContentType "application/json" `
-  -Body $Body | ConvertTo-Json -Depth 30
+```text
+http://127.0.0.1:11436/v1
 ```
 
-Unlike a direct request to the old provider, this request receives synthesized Codex turn identity metadata.
+Configure the 9Router provider as **OpenAI Responses API**.
 
-## Tool mode
+Suggested values:
 
-`TEAMSIX_TOOLS_MODE=bridge` is the new mode. Incoming Codex tools are not sent to ChatGPT Web as native MCP tools. Instead:
+```text
+Name: TEAMSIX AI Bridge
+Prefix: teamsix
+Base URL: http://127.0.0.1:11436/v1
+API key: blank unless TEAMSIX_API_KEY is configured
+Default model: chatgpt-web/high
+```
 
-1. TEAMSIX advertises the available tool schemas to the browser model in a strict local tool contract.
-2. ChatGPT asks for a tool using `TEAMSIX_TOOL_CALL:{...}`.
-3. For a Codex/local tool, TEAMSIX converts it to a Responses `function_call`.
-4. Codex executes it locally with its normal permission model.
-5. The next `function_call_output` is translated back into browser context and ChatGPT continues.
+The public provider accepts ChatGPT Web models and 9Router may expose them with its provider prefix, for example:
 
-`passthrough` keeps the original Full MCP behavior for accounts/workspaces where the native connector is available. `off` strips tools completely.
+```text
+teamsix/chatgpt-web/light
+teamsix/chatgpt-web/medium
+teamsix/chatgpt-web/high
+teamsix/chatgpt-web/extra-high
+```
+
+## Development module
+
+The `teamsix-ai-bridge/` TypeScript package remains in the repository because its BridgeEngine, session store, SSE conversion, tool bridge and Plugin Hub are shared by the packaged desktop runtime.
+
+Running `bun run start` from this directory is a developer/debug path only. The intended user installation is the packaged **TEAMSIX AI Bridge** Electron application, which starts its embedded ChatGPT Web transport automatically.
 
 ## Plugin Hub
 
-Copy `plugins.example.json` to `plugins.json`. HTTP plugins are intentionally declarative and secrets are read only from environment variables.
+The optional TEAMSIX Plugin Hub supports declarative HTTP tools. Copy `plugins.example.json` to `plugins.json` for development. Secrets are referenced by environment-variable name and are not stored in the JSON configuration.
 
-Each plugin tool is exposed internally as:
+Plugin tools use names like:
 
 ```text
 plugin__<plugin-id>__<tool-name>
 ```
 
-Plugin tools are executed by TEAMSIX itself. Local machine tools should normally stay in Codex, not in the Plugin Hub.
-
-The dashboard shows plugin state and can reload `plugins.json` without restarting the process.
+This Plugin Hub supplements the tools/plugins already supplied by Codex; it does not replace them.
 
 ## Security defaults
 
-- Listener defaults to loopback only.
-- No provider key is required unless `TEAMSIX_API_KEY` is explicitly set.
-- Plugin secrets are not stored in `plugins.json`; only the environment-variable name is stored.
-- Arbitrary shell execution is not implemented in the Plugin Hub. Local execution remains under Codex permissions.
-- The bridge never changes Codex `openai_base_url`; 9Router remains the owner of that route.
+- Public provider and internal transport bind to loopback by default.
+- 9Router remains the owner of the Codex route; TEAMSIX never needs to rewrite `openai_base_url`.
+- The embedded transport is forced to connector-free `browser-only` mode in TEAMSIX/9Router operation.
+- Local filesystem/terminal execution remains under Codex permissions rather than being implemented as arbitrary shell execution in the Plugin Hub.
+- The custom TEAMSIX build disables the original upstream self-updater so it cannot overwrite TEAMSIX with a stock `codex-chatgpt-web` release.
