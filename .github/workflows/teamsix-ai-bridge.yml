@@ -31,6 +31,26 @@ jobs:
       - run: bun run typecheck
       - run: bun test
       - run: bun run build:win
+      - name: Smoke standalone Windows executable
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath '.\dist\teamsix-ai-bridge.exe' -PassThru -WindowStyle Hidden
+          try {
+            $models = $null
+            for ($i = 0; $i -lt 30; $i++) {
+              Start-Sleep -Milliseconds 500
+              try {
+                $models = Invoke-RestMethod 'http://127.0.0.1:11436/v1/models' -TimeoutSec 3
+                break
+              } catch {}
+            }
+            if (-not $models -or -not $models.data -or $models.data.Count -lt 1) {
+              throw 'Compiled TEAMSIX provider did not answer /v1/models'
+            }
+            $models.data | Select-Object id, owned_by | Format-Table -AutoSize
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: teamsix-ai-bridge-windows-x64
