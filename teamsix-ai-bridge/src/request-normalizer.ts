@@ -36,16 +36,15 @@ function readCodexMetadata(body: Record<string, unknown>): CodexMetadata | undef
 
 function resolveIdentity(body: Record<string, unknown>): { identity: TurnIdentity; native: boolean; metadata: CodexMetadata } {
   const existing = readCodexMetadata(body);
-  const threadId = typeof existing?.thread_id === "string" && existing.thread_id.trim()
+  const nativeThreadId = typeof existing?.thread_id === "string" && existing.thread_id.trim()
     ? existing.thread_id.trim()
-    : newThreadId();
-  const turnId = typeof existing?.turn_id === "string" && existing.turn_id.trim()
+    : undefined;
+  const nativeTurnId = typeof existing?.turn_id === "string" && existing.turn_id.trim()
     ? existing.turn_id.trim()
-    : newTurnId();
-  const native = Boolean(
-    typeof existing?.thread_id === "string" && existing.thread_id.trim()
-    && typeof existing?.turn_id === "string" && existing.turn_id.trim(),
-  );
+    : undefined;
+  const threadId = nativeThreadId ?? newThreadId();
+  const turnId = nativeTurnId ?? newTurnId();
+  const native = Boolean(nativeThreadId && nativeTurnId);
   return {
     identity: { threadId, turnId },
     native,
@@ -70,7 +69,11 @@ function normalizeContent(content: unknown): Array<Record<string, unknown>> {
   return [{ type: "input_text", text: content == null ? "" : String(content) }];
 }
 
-function normalizeInput(input: unknown, turnId: string): Array<Record<string, unknown>> {
+function normalizeInput(
+  input: unknown,
+  turnId: string,
+  preserveNativeProvenance: boolean,
+): Array<Record<string, unknown>> {
   const source = typeof input === "string"
     ? [{ type: "message", role: "user", content: [{ type: "input_text", text: input }] }]
     : Array.isArray(input)
@@ -78,11 +81,20 @@ function normalizeInput(input: unknown, turnId: string): Array<Record<string, un
       : [];
 
   return source.map((raw, index) => {
-    const item = asRecord(raw) ?? {
+    const existing = asRecord(raw);
+    const item = existing ?? {
       type: "message",
       role: "user",
       content: [{ type: "input_text", text: String(raw) }],
     };
+
+    // A native Codex Responses request already carries authoritative message ids and per-message
+    // turn provenance. Historical assistant/user/developer messages may belong to older turns.
+    // Rewriting all of them to the current turn breaks resume, environment authority and
+    // compaction. Preserve the native wire item byte-semantically (after structuredClone) and let
+    // the embedded browser runtime validate Codex's own provenance exactly as it normally does.
+    if (preserveNativeProvenance && existing) return { ...item };
+
     if (item.type !== "message") return { ...item };
     return {
       ...item,
@@ -105,12 +117,16 @@ function normalizeTools(value: unknown): ToolDefinition[] {
 export function normalizeResponsesRequest(raw: unknown): NormalizedRequest {
   const body = structuredClone(asRecord(raw) ?? {});
   const { identity, native, metadata } = resolveIdentity(body);
-  const clientMetadata = asRecord(body.client_metadata) ?? {};
-  body.client_metadata = {
-    ...clientMetadata,
-    "x-codex-turn-metadata": JSON.stringify(metadata),
-  };
-  body.input = normalizeInput(body.input, identity.turnId);
+
+  if (!native) {
+    const clientMetadata = asRecord(body.client_metadata) ?? {};
+    body.client_metadata = {
+      ...clientMetadata,
+      "x-codex-turn-metadata": JSON.stringify(metadata),
+    };
+  }
+
+  body.input = normalizeInput(body.input, identity.turnId, native);
   body.stream = body.stream === true;
   const tools = normalizeTools(body.tools);
 
