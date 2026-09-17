@@ -1,0 +1,32 @@
+name: TEAMSIX AI Bridge CI
+
+on:
+  push:
+    branches:
+      - feature/teamsix-ai-bridge
+    paths:
+      - 'teamsix-ai-bridge/**'
+      - '.github/workflows/teamsix-ai-bridge.yml'
+  pull_request:
+    paths:
+      - 'teamsix-ai-bridge/**'
+      - '.github/workflows/teamsix-ai-bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: teamsix-ai-bridge
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install
+      - run: bun run typecheck
+      - run: bun test
