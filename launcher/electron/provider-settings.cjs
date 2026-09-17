@@ -119,20 +119,41 @@ function installRouterManagedRuntimeHooks() {
   if (globalThis[patchKey]) return true;
 
   let RuntimeHost;
+  let RuntimeSupervisor;
   try {
     ({ RuntimeHost } = require("./runtime.cjs"));
+    ({ RuntimeSupervisor } = require("./runtime-supervisor.cjs"));
   } catch {
     return false;
   }
-  if (!RuntimeHost?.prototype) return false;
+  if (!RuntimeHost?.prototype || !RuntimeSupervisor?.prototype) return false;
 
   const originalUpgradeManagedRuntime = RuntimeHost.prototype.upgradeManagedRuntime;
   const originalConnectBridgeRoute = RuntimeHost.prototype.connectBridgeRoute;
   const originalRestoreBridgeRoute = RuntimeHost.prototype.restoreBridgeRoute;
   const originalRestoreBridgeRouteWithinOperation = RuntimeHost.prototype.restoreBridgeRouteWithinOperation;
+  const originalReadConfig = RuntimeSupervisor.prototype.readConfig;
 
   const routerManagedFor = (host) => host?.launcherProfile === "production"
     && routerManagedProviderEnabled(host?.coreHome || providerCoreHome());
+
+  RuntimeSupervisor.prototype.readConfig = function (...args) {
+    const config = originalReadConfig.apply(this, args);
+    if (!config || !routerManagedFor(this)) return config;
+    const launcherVersion = this.app?.getVersion?.();
+    if (typeof launcherVersion !== "string" || !launcherVersion || config.releaseVersion === launcherVersion) {
+      return config;
+    }
+    if (!this.__routerManagedVersionCompatibilityLogged) {
+      this.__routerManagedVersionCompatibilityLogged = true;
+      this.logger?.info?.("runtime.router_managed_release_compat", {
+        configuredVersion: config.releaseVersion,
+        launcherVersion,
+        reason: "9Router mode preserves the existing runtime config without rewriting the Codex route",
+      });
+    }
+    return { ...config, releaseVersion: launcherVersion };
+  };
 
   RuntimeHost.prototype.upgradeManagedRuntime = async function (...args) {
     if (routerManagedFor(this)) {
