@@ -14,9 +14,12 @@ const config = {
 describe("BridgeEngine", () => {
   test("keeps a local ChatGPT Web model catalog available while embedded runtime is starting", async () => {
     const engine = new BridgeEngine(config);
-    const catalog = await engine.models();
+    const catalog = await engine.models() as {
+      object: string;
+      data: Array<{ id: string }>;
+    };
     expect(catalog.object).toBe("list");
-    const ids = catalog.data.map((item: { id: string }) => item.id);
+    const ids = catalog.data.map(item => item.id);
     expect(ids).toContain("chatgpt-web/high");
   });
 });
