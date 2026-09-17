@@ -9,6 +9,7 @@ const DEFAULT_PROVIDER_SETTINGS = Object.freeze({
   url: "http://127.0.0.1",
   port: 11436,
 });
+const LEGACY_PROVIDER_PORT = 11435;
 
 function normalizeProviderUrl(value) {
   const raw = typeof value === "string" && value.trim()
@@ -43,11 +44,12 @@ function normalizeProviderPort(value) {
 
 function validateProviderSettings(value) {
   const input = value && typeof value === "object" ? value : {};
+  const configuredPort = normalizeProviderPort(input.port ?? DEFAULT_PROVIDER_SETTINGS.port);
   return {
     version: 1,
     enabled: input.enabled === undefined ? DEFAULT_PROVIDER_SETTINGS.enabled : input.enabled === true,
     url: normalizeProviderUrl(input.url),
-    port: normalizeProviderPort(input.port ?? DEFAULT_PROVIDER_SETTINGS.port),
+    port: configuredPort === LEGACY_PROVIDER_PORT ? DEFAULT_PROVIDER_SETTINGS.port : configuredPort,
   };
 }
 
