@@ -15,7 +15,7 @@ export const DEFAULT_PROVIDER_RUNTIME_SETTINGS: ProviderRuntimeSettings = Object
   enabled: true,
   url: "http://127.0.0.1",
   host: "127.0.0.1",
-  port: 11435,
+  port: 11436,
 });
 
 export function providerSettingsPath(): string {
@@ -44,7 +44,6 @@ function normalizeProviderUrl(value: unknown): { url: string; host: "127.0.0.1" 
   }
   return {
     url: parsed.hostname === "localhost" ? "http://localhost" : "http://127.0.0.1",
-    // Keep the listener IPv4-loopback-only even when the friendly URL uses localhost.
     host: "127.0.0.1",
   };
 }
@@ -76,7 +75,7 @@ export function loadProviderRuntimeSettings(): ProviderRuntimeSettings {
     return normalizeProviderRuntimeSettings(JSON.parse(readFileSync(path, "utf8")));
   } catch (error) {
     throw new Error(
-      `Invalid 9Router provider settings at ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      `Invalid TEAMSIX 9Router provider settings at ${path}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
