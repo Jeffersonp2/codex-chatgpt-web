@@ -8,7 +8,8 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "typecheck": "bunx tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "build:win": "bun build --compile --target=bun-windows-x64-baseline src/index.ts --outfile dist/teamsix-ai-bridge.exe"
   },
   "devDependencies": {
     "@types/bun": "latest",
