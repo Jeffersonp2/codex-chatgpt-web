@@ -1,5 +1,6 @@
 const languages = require("./languages.json");
 const fs = require("node:fs");
+require("./provider-settings.cjs");
 const { writePrivateFileAtomic } = require("./atomic-file.cjs");
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 420;
