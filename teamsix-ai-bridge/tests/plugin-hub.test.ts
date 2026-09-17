@@ -31,7 +31,7 @@ describe("PluginHub", () => {
           tools: [{ name: "skip", path: "skip" }],
         },
       ],
-    }));
+    }), "utf8");
 
     const hub = new PluginHub(config);
     expect(hub.listPlugins()).toHaveLength(1);
