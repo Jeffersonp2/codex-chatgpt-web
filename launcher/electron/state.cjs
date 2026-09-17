@@ -1,5 +1,6 @@
 const languages = require("./languages.json");
 const fs = require("node:fs");
+const { routerManagedProviderEnabled } = require("./provider-settings.cjs");
 const { writePrivateFileAtomic } = require("./atomic-file.cjs");
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 420;
@@ -106,14 +107,24 @@ function validateSidebarState(value) {
   return { sidebarOpen: value.open, sidebarWidth: Math.round(value.width) };
 }
 
+function applyRouterManagedState(state) {
+  if (state.coreSetupComplete !== true || !routerManagedProviderEnabled()) return state;
+  return {
+    ...state,
+    codexCatalogVerified: true,
+    codexRestartRequired: false,
+  };
+}
+
 function createStateStore(filePath) {
-  let state = readState(filePath);
+  let state = applyRouterManagedState(readState(filePath));
   return {
     read() {
+      state = applyRouterManagedState(state);
       return structuredClone(state);
     },
     update(patch) {
-      const next = { ...state, ...patch, version: 1 };
+      const next = applyRouterManagedState({ ...state, ...patch, version: 1 });
       writeState(filePath, next);
       state = next;
       return structuredClone(next);
