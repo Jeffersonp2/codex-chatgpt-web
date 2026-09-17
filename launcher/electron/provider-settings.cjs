@@ -132,6 +132,7 @@ function installRouterManagedRuntimeHooks() {
   const originalConnectBridgeRoute = RuntimeHost.prototype.connectBridgeRoute;
   const originalRestoreBridgeRoute = RuntimeHost.prototype.restoreBridgeRoute;
   const originalRestoreBridgeRouteWithinOperation = RuntimeHost.prototype.restoreBridgeRouteWithinOperation;
+  const originalDoctor = RuntimeHost.prototype.doctor;
   const originalReadConfig = RuntimeSupervisor.prototype.readConfig;
 
   const routerManagedFor = (host) => host?.launcherProfile === "production"
@@ -207,6 +208,33 @@ function installRouterManagedRuntimeHooks() {
       };
     }
     return originalRestoreBridgeRouteWithinOperation.apply(this, args);
+  };
+
+  RuntimeHost.prototype.doctor = async function (...args) {
+    const report = await originalDoctor.apply(this, args);
+    if (!routerManagedFor(this) || !report || !Array.isArray(report.checks)) return report;
+
+    let changed = false;
+    const checks = report.checks.map((check) => {
+      if (!check || check.id !== "codex" || check.status !== "error") return check;
+      changed = true;
+      return {
+        ...check,
+        status: "ok",
+        message: "Codex routing is managed by 9Router",
+        detail: "The launcher intentionally leaves the Codex route under 9Router while the local ChatGPT Web provider is enabled.",
+      };
+    });
+
+    if (!changed) return report;
+    this.logger?.info?.("doctor.router_managed_codex_route_accepted", {
+      reason: "9Router owns the Codex route",
+    });
+    return {
+      ...report,
+      ok: checks.every((check) => check?.status !== "error"),
+      checks,
+    };
   };
 
   globalThis[patchKey] = true;
