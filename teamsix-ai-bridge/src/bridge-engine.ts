@@ -1,7 +1,7 @@
 import type { BridgeConfig } from "./config";
 import { PluginHub } from "./plugin-hub";
 import { mapTeamsixModelToUpstream, normalizeResponsesRequest } from "./request-normalizer";
-import { SessionStore, newMessageId, type BridgeSession, type ToolDefinition } from "./session-store";
+import { SessionStore, newMessageId, type ToolDefinition } from "./session-store";
 import {
   extractResponseText,
   makeToolContractMessage,
@@ -86,11 +86,7 @@ export class BridgeEngine {
         data: data.flatMap(raw => {
           const model = asRecord(raw);
           if (!model || typeof model.id !== "string" || !model.id.startsWith("chatgpt-web/")) return [];
-          return [{
-            ...model,
-            id: `teamsix/${model.id}`,
-            owned_by: "teamsix-ai-bridge",
-          }];
+          return [{ ...model, owned_by: "teamsix-ai-bridge" }];
         }),
       };
     } catch {
@@ -98,7 +94,7 @@ export class BridgeEngine {
       return {
         object: "list",
         data: ["light", "medium", "high", "extra-high"].map(level => ({
-          id: `teamsix/chatgpt-web/${level}`,
+          id: `chatgpt-web/${level}`,
           object: "model",
           created,
           owned_by: "teamsix-ai-bridge",
@@ -137,8 +133,9 @@ export class BridgeEngine {
     const normalized = normalizeResponsesRequest(raw);
     const requestedModel = typeof normalized.body.model === "string"
       ? normalized.body.model
-      : "teamsix/chatgpt-web/high";
+      : "chatgpt-web/high";
     const upstreamModel = mapTeamsixModelToUpstream(requestedModel);
+
     if (!upstreamModel.startsWith("chatgpt-web/")) {
       return {
         status: 400,
@@ -150,7 +147,7 @@ export class BridgeEngine {
           error: {
             type: "invalid_request_error",
             code: "unsupported_model",
-            message: `TEAMSIX AI Bridge accepts only teamsix/chatgpt-web/* or chatgpt-web/* models; received ${JSON.stringify(requestedModel)}`,
+            message: `TEAMSIX AI Bridge accepts only chatgpt-web/* models; received ${JSON.stringify(requestedModel)}`,
           },
         },
       };
@@ -162,7 +159,7 @@ export class BridgeEngine {
     const incomingTools = normalized.tools;
     this.sessions.setTools(session.threadId, incomingTools);
 
-    let body = structuredClone(normalized.body);
+    const body = structuredClone(normalized.body);
     body.model = upstreamModel;
     body.stream = false;
 
@@ -177,8 +174,7 @@ export class BridgeEngine {
         }
       }
       const allTools: ToolDefinition[] = [...incomingTools, ...pluginTools];
-      const contract = makeToolContractMessage(allTools, normalized.identity.turnId);
-      input = insertToolContract(input, contract);
+      input = insertToolContract(input, makeToolContractMessage(allTools, normalized.identity.turnId));
       body.input = input;
       delete body.tools;
       delete body.tool_choice;
@@ -196,6 +192,7 @@ export class BridgeEngine {
     for (let round = 0; round <= maxPluginRounds; round++) {
       const upstream = await this.fetchUpstream(body);
       const payload = upstream.payload;
+
       if (upstream.status < 200 || upstream.status >= 300 || payload.status === "failed") {
         return {
           status: upstream.status,
@@ -218,8 +215,7 @@ export class BridgeEngine {
         };
       }
 
-      const text = extractResponseText(payload);
-      const toolCall = parseToolCall(text, allTools);
+      const toolCall = parseToolCall(extractResponseText(payload), allTools);
       if (!toolCall) {
         return {
           status: upstream.status,
@@ -248,15 +244,16 @@ export class BridgeEngine {
             },
           };
         }
+
         let args: unknown = {};
-        try { args = JSON.parse(toolCall.arguments); } catch { args = { input: toolCall.arguments }; }
+        try { args = JSON.parse(toolCall.arguments); }
+        catch { args = { input: toolCall.arguments }; }
+
         const callId = `plugin_${crypto.randomUUID().replaceAll("-", "")}`;
         let result: unknown;
-        try {
-          result = await this.plugins.invoke(toolCall.name, args);
-        } catch (error) {
-          result = { error: error instanceof Error ? error.message : String(error) };
-        }
+        try { result = await this.plugins.invoke(toolCall.name, args); }
+        catch (error) { result = { error: error instanceof Error ? error.message : String(error) }; }
+
         const input = Array.isArray(body.input) ? body.input as Array<Record<string, unknown>> : [];
         body.input = [...input, pluginResultMessage(normalized.identity.turnId, callId, toolCall.name, result)];
         continue;
