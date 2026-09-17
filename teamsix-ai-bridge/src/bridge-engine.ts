@@ -64,6 +64,12 @@ function localToolNames(tools: ToolDefinition[]): Set<string> {
   return names;
 }
 
+function isClientToolOutput(item: Record<string, unknown> | undefined): item is Record<string, unknown> {
+  return item?.type === "function_call_output"
+    || item?.type === "custom_tool_call_output"
+    || item?.type === "tool_search_output";
+}
+
 export class BridgeEngine {
   readonly sessions: SessionStore;
   readonly plugins: PluginHub;
@@ -157,6 +163,7 @@ export class BridgeEngine {
     const session = this.sessions.resolve(normalized.identity);
     const pluginTools = this.config.toolsMode === "bridge" ? this.plugins.listTools() : [];
     const incomingTools = normalized.tools;
+    const allTools: ToolDefinition[] = [...incomingTools, ...pluginTools];
     this.sessions.setTools(session.threadId, incomingTools);
 
     const body = structuredClone(normalized.body);
@@ -168,12 +175,11 @@ export class BridgeEngine {
       if (Array.isArray(body.input)) {
         for (const rawItem of body.input) {
           const item = asRecord(rawItem);
-          if (item?.type === "function_call_output" && typeof item.call_id === "string") {
+          if (isClientToolOutput(item) && typeof item.call_id === "string") {
             this.sessions.consumePendingCall(session.threadId, item.call_id);
           }
         }
       }
-      const allTools: ToolDefinition[] = [...incomingTools, ...pluginTools];
       input = insertToolContract(input, makeToolContractMessage(allTools, normalized.identity.turnId));
       body.input = input;
       delete body.tools;
@@ -186,7 +192,6 @@ export class BridgeEngine {
     }
 
     const localNames = localToolNames(incomingTools);
-    const allTools: ToolDefinition[] = [...incomingTools, ...pluginTools];
     const maxPluginRounds = 8;
 
     for (let round = 0; round <= maxPluginRounds; round++) {
@@ -260,7 +265,7 @@ export class BridgeEngine {
       }
 
       if (localNames.has(toolCall.name)) {
-        const synthetic = synthesizeFunctionCallResponse(payload, toolCall);
+        const synthetic = synthesizeFunctionCallResponse(payload, toolCall, incomingTools);
         this.sessions.addPendingCall(session.threadId, synthetic.pending);
         return {
           status: 200,
