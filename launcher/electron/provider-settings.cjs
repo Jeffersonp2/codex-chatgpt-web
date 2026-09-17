@@ -7,8 +7,9 @@ const DEFAULT_PROVIDER_SETTINGS = Object.freeze({
   version: 1,
   enabled: true,
   url: "http://127.0.0.1",
-  port: 11435,
+  port: 11436,
 });
+const LEGACY_PROVIDER_PORT = 11435;
 
 function normalizeProviderUrl(value) {
   const raw = typeof value === "string" && value.trim()
@@ -43,11 +44,12 @@ function normalizeProviderPort(value) {
 
 function validateProviderSettings(value) {
   const input = value && typeof value === "object" ? value : {};
+  const configuredPort = normalizeProviderPort(input.port ?? DEFAULT_PROVIDER_SETTINGS.port);
   return {
     version: 1,
     enabled: input.enabled === undefined ? DEFAULT_PROVIDER_SETTINGS.enabled : input.enabled === true,
     url: normalizeProviderUrl(input.url),
-    port: normalizeProviderPort(input.port ?? DEFAULT_PROVIDER_SETTINGS.port),
+    port: configuredPort === LEGACY_PROVIDER_PORT ? DEFAULT_PROVIDER_SETTINGS.port : configuredPort,
   };
 }
 
@@ -62,7 +64,7 @@ function readProviderSettings(coreHome) {
     return validateProviderSettings(JSON.parse(fs.readFileSync(pathname, "utf8")));
   } catch (error) {
     throw new Error(
-      `Invalid 9Router provider settings at ${pathname}: ${error instanceof Error ? error.message : String(error)}`,
+      `Invalid TEAMSIX 9Router provider settings at ${pathname}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
@@ -105,7 +107,7 @@ function registerProviderSettingsIpc() {
   const ipcMain = electron && typeof electron === "object" ? electron.ipcMain : null;
   if (!ipcMain || typeof ipcMain.handle !== "function") return false;
 
-  const registrationKey = Symbol.for("codex-web-gpt.provider-settings-ipc");
+  const registrationKey = Symbol.for("teamsix-ai-bridge.provider-settings-ipc");
   if (globalThis[registrationKey]) return true;
 
   ipcMain.handle("launcher:provider-settings-read", () => readProviderSettings(providerCoreHome()));
@@ -115,7 +117,7 @@ function registerProviderSettingsIpc() {
 }
 
 function installRouterManagedRuntimeHooks() {
-  const patchKey = Symbol.for("codex-web-gpt.router-managed-runtime-hooks");
+  const patchKey = Symbol.for("teamsix-ai-bridge.router-managed-runtime-hooks");
   if (globalThis[patchKey]) return true;
 
   let RuntimeHost;
@@ -141,25 +143,45 @@ function installRouterManagedRuntimeHooks() {
   RuntimeSupervisor.prototype.readConfig = function (...args) {
     const config = originalReadConfig.apply(this, args);
     if (!config || !routerManagedFor(this)) return config;
+
+    // TEAMSIX owns tool/plugin translation itself. The embedded ChatGPT browser runtime must
+    // therefore stay connector-free even if an older local setup was configured as Full MCP.
+    // This is an in-memory runtime view only; the user's stored tunnel/MCP configuration is not
+    // deleted and can still be used by the original project if TEAMSIX mode is later disabled.
+    const patched = {
+      ...config,
+      mode: "browser-only",
+      browserInteractionMode: "automatic",
+    };
+
     const launcherVersion = this.app?.getVersion?.();
-    if (typeof launcherVersion !== "string" || !launcherVersion || config.releaseVersion === launcherVersion) {
-      return config;
+    if (typeof launcherVersion === "string" && launcherVersion && patched.releaseVersion !== launcherVersion) {
+      patched.releaseVersion = launcherVersion;
+      if (!this.__routerManagedVersionCompatibilityLogged) {
+        this.__routerManagedVersionCompatibilityLogged = true;
+        this.logger?.info?.("runtime.router_managed_release_compat", {
+          configuredVersion: config.releaseVersion,
+          launcherVersion,
+          reason: "TEAMSIX keeps 9Router as the Codex route owner and uses an embedded browser-only runtime",
+        });
+      }
     }
-    if (!this.__routerManagedVersionCompatibilityLogged) {
-      this.__routerManagedVersionCompatibilityLogged = true;
-      this.logger?.info?.("runtime.router_managed_release_compat", {
-        configuredVersion: config.releaseVersion,
-        launcherVersion,
-        reason: "9Router mode preserves the existing runtime config without rewriting the Codex route",
+
+    if (!this.__teamsixBrowserOnlyLogged && config.mode !== "browser-only") {
+      this.__teamsixBrowserOnlyLogged = true;
+      this.logger?.info?.("runtime.teamsix_browser_only", {
+        configuredMode: config.mode,
+        runtimeMode: "browser-only",
+        reason: "TEAMSIX Tool Bridge relays Codex tools without requiring Codex Native2",
       });
     }
-    return { ...config, releaseVersion: launcherVersion };
+    return patched;
   };
 
   RuntimeHost.prototype.upgradeManagedRuntime = async function (...args) {
     if (routerManagedFor(this)) {
       this.logger?.info?.("runtime.router_managed_upgrade_skipped", {
-        reason: "9Router provider owns the Codex route",
+        reason: "TEAMSIX/9Router mode preserves the existing runtime config and Codex route",
       });
       return { updated: false, routerManaged: true };
     }
@@ -184,7 +206,7 @@ function installRouterManagedRuntimeHooks() {
   RuntimeHost.prototype.restoreBridgeRoute = async function (...args) {
     if (routerManagedFor(this)) {
       this.logger?.info?.("bridge.router_managed_restore_skipped", {
-        reason: "Launcher does not own the Codex route while 9Router provider is enabled",
+        reason: "TEAMSIX does not own the Codex route while 9Router provider mode is enabled",
       });
       return {
         installed: true,
@@ -222,7 +244,7 @@ function installRouterManagedRuntimeHooks() {
         ...check,
         status: "ok",
         message: "Codex routing is managed by 9Router",
-        detail: "The launcher intentionally leaves the Codex route under 9Router while the local ChatGPT Web provider is enabled.",
+        detail: "TEAMSIX intentionally leaves the Codex route under 9Router and exposes its own local Responses provider.",
       };
     });
 

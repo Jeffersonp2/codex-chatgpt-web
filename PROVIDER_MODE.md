@@ -1,191 +1,94 @@
-# Provider mode for 9Router
+# TEAMSIX AI Bridge / 9Router Mode
 
-This fork adds a local provider bridge for using ChatGPT Web models behind 9Router without requiring 9Router to talk directly to the ChatGPT browser transport.
-
-## Architecture
+TEAMSIX is the user-facing desktop application for routing the authenticated ChatGPT Web browser backend through 9Router while preserving the native Codex Responses protocol.
 
 ```text
-Codex
-  |
-  v
-9Router
-  |-- Ollama / other providers
-  `-- ChatGPT Web provider -> http://127.0.0.1:11435/v1
-                               |
-                               v
-                         codex-chatgpt-web daemon
-                         http://127.0.0.1:17841/v1
-                               |
-                               v
-                           ChatGPT Web
+ChatGPT Codex
+      |
+      v
+   9Router
+      |
+      v
+TEAMSIX AI Bridge :11436
+      |
+      +-- embedded ChatGPT Web browser/login/runtime
+      +-- Codex tool/plugin relay
+      +-- sessions / compaction / streaming
+      +-- optional TEAMSIX Plugin Hub
+      |
+      v
+ ChatGPT Web
 ```
 
-The provider bridge intentionally keeps the native OpenAI Responses protocol. This preserves Codex turn metadata, streaming, reasoning events, tool metadata and compaction requests.
+## User-facing processes
 
-## Single-process runtime
+The intended setup has only three applications the user manages:
 
-The normal runtime starts the ChatGPT Web daemon and, when enabled, the 9Router provider in one process:
+1. ChatGPT/Codex
+2. 9Router
+3. TEAMSIX AI Bridge
 
-```powershell
-bun run start
-```
+The original `codex-chatgpt-web` runtime remains reused internally, but TEAMSIX owns its lifecycle. The user does not install or start a separate Codex Web GPT application.
 
-or equivalently:
+## Routing ownership
 
-```powershell
-bun run 9router
-```
+9Router owns the Codex route. TEAMSIX must not rewrite Codex `openai_base_url` while provider mode is enabled.
 
-Default output when the provider is enabled:
+Public provider endpoint:
 
 ```text
-codex-chatgpt-web 5.0.7 listening on http://127.0.0.1:17841/v1 (full)
-9Router provider listening on http://127.0.0.1:11435/v1
+http://127.0.0.1:11436/v1
 ```
 
-`17841` is the internal ChatGPT Web Responses daemon. `11435` is the default provider endpoint intended for 9Router.
+Use **OpenAI Responses API** in 9Router.
 
-The standalone diagnostic command remains available:
+## Embedded browser transport
 
-```powershell
-bun run provider
-```
+TEAMSIX starts the existing browser/runtime internally and forces it to `browser-only` + automatic mode. This deliberately removes the requirement for the ChatGPT `Codex Native2` connector in normal TEAMSIX operation.
 
-It is normally unnecessary once the combined runtime is used.
+The embedded transport may use an internal loopback endpoint such as `127.0.0.1:17841`; that endpoint is an implementation detail and is started/stopped by TEAMSIX.
 
-## Provider settings in the desktop app
+## Codex tools and plugins
 
-The desktop launcher adds a **9Router Provider** section under **Settings**. It provides:
+TEAMSIX receives the original `tools` array and Codex turn metadata from the Responses request. In default `bridge` mode it:
 
-- an Enable/Disable switch;
-- local provider URL;
-- provider port;
-- a preview of the final `/v1` endpoint;
-- a Save button.
+1. preserves native Codex `thread_id` and `turn_id` when supplied;
+2. synthesizes valid identities for generic Responses clients when necessary;
+3. removes native tools from the browser-only upstream request;
+4. gives ChatGPT Web a strict TEAMSIX tool-selection contract;
+5. translates a selected Codex/local tool into a native Responses `function_call`;
+6. returns that function call through 9Router to Codex;
+7. accepts the resulting `function_call_output` and resumes the ChatGPT Web turn.
 
-The settings are stored in:
+Therefore filesystem, terminal, Git, builds, Computer Use and connected Codex plugins remain executed by Codex under its own permissions. TEAMSIX does not need arbitrary local shell access for this relay.
 
-```text
-~/.codex-chatgpt-web/provider.json
-```
+A plugin that is itself disconnected or unauthorized in Codex still needs to be connected there. TEAMSIX can relay only tools that Codex exposes to the turn.
 
-Default configuration:
+## Optional TEAMSIX Plugin Hub
 
-```json
-{
-  "version": 1,
-  "enabled": true,
-  "url": "http://127.0.0.1",
-  "port": 11435
-}
-```
+TEAMSIX can additionally expose declarative HTTP tools from `plugins.json`. Secrets are referenced through environment variables. This is additive to Codex tools/plugins, not a replacement.
 
-For safety, the UI accepts only `http://127.0.0.1` or `http://localhost`; the listener remains IPv4 loopback-only and is not exposed directly to the LAN.
+## Model namespace
 
-Changes take effect when Codex Web GPT is restarted. Disabling the provider leaves the normal ChatGPT Web daemon available but does not open the 9Router provider port.
-
-## Desktop launcher, tray and Windows startup
-
-The existing Electron launcher supervises the same packaged runtime, so the provider endpoint is started automatically together with the normal daemon when the provider is enabled.
-
-The launcher already supports:
-
-- Windows system tray operation;
-- keeping the runtime active when the main window is closed;
-- starting at Windows login with `--hidden`;
-- restarting the supervised runtime after failures.
-
-The packaged launcher uses the combined runtime entrypoint, so no PowerShell window is required for normal use.
-
-For a new launcher profile, `Launch at login` and `Keep running on close` default to enabled. If either setting was disabled previously, enable it again in Launcher Settings.
-
-## Build the Windows app
-
-Install the launcher dependencies once:
-
-```powershell
-cd D:\LLMs\codex-chatgpt-web\launcher
-bun install --frozen-lockfile
-```
-
-Then build the Windows installer from the repository root:
-
-```powershell
-cd D:\LLMs\codex-chatgpt-web
-bun run app:package
-```
-
-The distributable Windows artifacts are written under:
-
-```text
-D:\LLMs\codex-chatgpt-web\launcher\artifacts\
-```
-
-Install the `codex-web-gpt-*-win-x64.exe` file normally. After setup, keep `Launch at login` and `Keep running on close` enabled. Closing the main window leaves the app in the system tray and keeps the configured runtime available.
-
-## Provider endpoint
-
-Default provider URL:
-
-```text
-http://127.0.0.1:11435/v1
-```
-
-Change the URL, port, or enabled state from the launcher's Settings screen. Advanced users can also edit `provider.json` while the application is stopped.
-
-Optional local API key remains available through the environment:
-
-```powershell
-$env:CODEX_WEB_PROVIDER_API_KEY="change-me"
-bun run start
-```
-
-When no API key is configured, the bridge is still restricted to the loopback interface.
-
-## 9Router configuration
-
-Create an OpenAI-compatible provider that uses the Responses API.
-
-```text
-Name: ChatGPT Web
-Prefix: cgw
-API Type: Responses
-Base URL: http://127.0.0.1:11435/v1
-API Key: local
-```
-
-If you change the provider URL/port in Codex Web GPT Settings, use the resulting endpoint shown there as the 9Router Base URL.
-
-The provider exposes only the `chatgpt-web/*` model namespace. It does not expose or proxy native OpenAI models because 9Router should remain the router in front of this provider.
-
-Typical model IDs are:
+The TEAMSIX provider accepts the ChatGPT Web namespace and also understands provider prefixes used during development:
 
 ```text
 chatgpt-web/light
 chatgpt-web/medium
 chatgpt-web/high
-chatgpt-web/xhigh
-chatgpt-web/pro
+chatgpt-web/extra-high
 ```
 
-The exact list depends on the ChatGPT account capabilities discovered by the launcher.
+9Router can expose these under a provider prefix such as:
 
-## Test
-
-Health with the default endpoint:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:11435/healthz | ConvertTo-Json -Depth 10
+```text
+teamsix/chatgpt-web/high
 ```
 
-Models:
+## Provider settings migration
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:11435/v1/models | ConvertTo-Json -Depth 10
-```
+The earlier experimental 9Router provider used port `11435`. TEAMSIX uses `11436`. Existing persisted provider settings using `11435` are migrated in memory to `11436` by the TEAMSIX runtime/launcher.
 
-The provider bridge deliberately rejects `/v1/chat/completions`. Configure 9Router to send `/v1/responses`; converting Codex traffic to legacy Chat Completions may discard metadata required by the browser-backed harness.
+## Updates
 
-## Safety boundary
-
-Provider mode is local-only and strips the provider Authorization header before forwarding requests to the internal `codex-chatgpt-web` daemon. A local 9Router API key therefore cannot accidentally be forwarded as an OpenAI credential.
+The original upstream self-updater is disabled in the TEAMSIX packaged build so an upstream Codex Web GPT release cannot overwrite the custom TEAMSIX application. TEAMSIX updates should be built and distributed from this fork/project instead.

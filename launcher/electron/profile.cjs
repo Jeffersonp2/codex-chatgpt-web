@@ -23,6 +23,12 @@ function resolveLauncherProfile({
   }
   const development = argv.includes("--dev-profile");
   if (!development) {
+    // TEAMSIX is a custom 9Router build. Never let the original upstream auto-updater replace it.
+    process.env.TEAMSIX_DISABLE_UPDATES = "1";
+
+    // Keep the existing storage locations during the TEAMSIX migration so the authenticated
+    // ChatGPT browser partition and proven runtime configuration continue to work. TEAMSIX is the
+    // only user-facing app; codex-chatgpt-web is now an embedded implementation detail.
     const coreHome = env.CODEX_CHATGPT_WEB_HOME?.trim()
       ? resolveUserPath(env.CODEX_CHATGPT_WEB_HOME.trim(), homeDir)
       : path.join(homeDir, ".codex-chatgpt-web");
@@ -31,7 +37,7 @@ function resolveLauncherProfile({
       : path.join(appData, "Codex Web GPT");
     return {
       kind: PRODUCTION_PROFILE,
-      displayName: "Codex Web GPT",
+      displayName: "TEAMSIX AI Bridge",
       coreHome,
       codexHome: env.CODEX_HOME?.trim()
         ? resolveUserPath(env.CODEX_HOME.trim(), homeDir)
@@ -48,11 +54,11 @@ function resolveLauncherProfile({
     ? resolveUserPath(env.CODEX_CHATGPT_WEB_HOME.trim(), homeDir)
     : path.join(homeDir, ".codex-chatgpt-web");
   if (path.resolve(coreHome) === path.resolve(productionHome)) {
-    throw new Error("DEV profile home must differ from the production codex-chatgpt-web home");
+    throw new Error("DEV profile home must differ from the production TEAMSIX runtime home");
   }
   return {
     kind: DEVELOPMENT_PROFILE,
-    displayName: "Codex Web GPT DEV",
+    displayName: "TEAMSIX AI Bridge DEV",
     coreHome,
     codexHome: path.join(coreHome, "codex-home"),
     userData: path.join(coreHome, "launcher"),

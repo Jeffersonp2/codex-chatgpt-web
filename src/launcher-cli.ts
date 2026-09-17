@@ -11,6 +11,15 @@ async function runCombinedServe(args: string[]): Promise<void> {
 
   const config = loadConfig();
   const providerSettings = loadProviderRuntimeSettings();
+
+  if (providerSettings.enabled) {
+    // In TEAMSIX mode, ChatGPT Web is only the browser/model transport. Codex tools and plugins
+    // are relayed by the TEAMSIX provider itself, so the embedded transport must never require the
+    // Codex Native2 connector. This changes only the live runtime object, not config.json on disk.
+    config.mode = "browser-only";
+    config.browserInteractionMode = "automatic";
+  }
+
   const core = startServer(config);
 
   try {
@@ -22,13 +31,14 @@ async function runCombinedServe(args: string[]): Promise<void> {
         unref: true,
       });
       stdout.write(
-        `codex-chatgpt-web ${VERSION} listening on http://${config.host}:${core.port}/v1 (${config.mode})\n`
-          + `9Router provider listening on ${providerEndpoint({ ...providerSettings, port: provider.port ?? providerSettings.port })}\n`,
+        `TEAMSIX AI Bridge ${VERSION} ready on ${providerEndpoint({ ...providerSettings, port: provider.port ?? providerSettings.port })}\n`
+          + `embedded ChatGPT Web transport: http://${config.host}:${core.port}/v1 (browser-only)\n`
+          + "Codex route owner: 9Router\n",
       );
     } else {
       stdout.write(
         `codex-chatgpt-web ${VERSION} listening on http://${config.host}:${core.port}/v1 (${config.mode})\n`
-          + "9Router provider disabled by settings\n",
+          + "TEAMSIX 9Router provider disabled by settings\n",
       );
     }
   } catch (error) {
@@ -45,6 +55,5 @@ const command = args.shift() ?? "help";
 if (command === "serve" || command === "9router") {
   await runCombinedServe(args);
 } else {
-  // Preserve every existing CLI command without duplicating the original command parser.
   await import("./cli");
 }

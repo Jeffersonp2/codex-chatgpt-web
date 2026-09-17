@@ -1,0 +1,100 @@
+name: TEAMSIX AI Bridge CI
+
+on:
+  push:
+    branches:
+      - feature/teamsix-ai-bridge
+    paths:
+      - 'teamsix-ai-bridge/**'
+      - 'src/provider-server.ts'
+      - 'src/provider-config.ts'
+      - 'src/launcher-cli.ts'
+      - 'launcher/**'
+      - '.github/workflows/teamsix-ai-bridge.yml'
+  pull_request:
+    paths:
+      - 'teamsix-ai-bridge/**'
+      - 'src/provider-server.ts'
+      - 'src/provider-config.ts'
+      - 'src/launcher-cli.ts'
+      - 'launcher/**'
+      - '.github/workflows/teamsix-ai-bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-core:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: teamsix-ai-bridge
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run build:win
+      - name: Smoke standalone development bridge
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath '.\dist\teamsix-ai-bridge.exe' -PassThru -WindowStyle Hidden
+          try {
+            $models = $null
+            for ($i = 0; $i -lt 30; $i++) {
+              Start-Sleep -Milliseconds 500
+              try {
+                $models = Invoke-RestMethod 'http://127.0.0.1:11436/v1/models' -TimeoutSec 3
+                break
+              } catch {}
+            }
+            if (-not $models -or -not $models.data -or $models.data.Count -lt 1) {
+              throw 'Compiled TEAMSIX development bridge did not answer /v1/models'
+            }
+            $models.data | Select-Object id, owned_by | Format-Table -AutoSize
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teamsix-ai-bridge-core-windows-x64
+          path: teamsix-ai-bridge/dist/teamsix-ai-bridge.exe
+          if-no-files-found: error
+
+  package-desktop-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install root dependencies
+        run: bun install --frozen-lockfile
+      - name: Install launcher dependencies
+        working-directory: launcher
+        run: bun install --frozen-lockfile
+      - name: Prepare AVX2-independent embedded Bun runtime
+        shell: pwsh
+        run: ./scripts/prepare-windows-baseline-bun.ps1 -Version 1.4.0 -GitHubEnv $env:GITHUB_ENV
+      - name: Typecheck root integration
+        run: bun run typecheck
+      - name: Typecheck desktop launcher
+        run: bun run launcher:typecheck
+      - name: Package TEAMSIX AI Bridge desktop
+        run: bun run app:package
+      - name: Smoke installed TEAMSIX desktop package
+        run: bun run app:smoke
+      - name: Show packaged artifacts
+        shell: pwsh
+        run: Get-ChildItem .\launcher\artifacts | Select-Object Name,Length | Format-Table -AutoSize
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teamsix-ai-bridge-desktop-windows-x64
+          path: |
+            launcher/artifacts/teamsix-ai-bridge-*-win-x64.exe
+            launcher/artifacts/checksums.txt
+          if-no-files-found: error

@@ -2,8 +2,8 @@
   "name": "codex-web-gpt-launcher",
   "version": "5.0.7",
   "private": true,
-  "description": "Desktop control center for Codex ChatGPT Web",
-  "author": "miuuyy",
+  "description": "TEAMSIX desktop bridge for routing ChatGPT Web through 9Router while preserving Codex tools and plugins",
+  "author": "TEAMSIX",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -42,8 +42,8 @@
   },
   "build": {
     "appId": "dev.codexwebgpt.launcher",
-    "productName": "Codex Web GPT",
-    "artifactName": "codex-web-gpt-${version}-${os}-${arch}.${ext}",
+    "productName": "TEAMSIX AI Bridge",
+    "artifactName": "teamsix-ai-bridge-${version}-${os}-${arch}.${ext}",
     "asar": true,
     "asarUnpack": [
       "assets/linux-appimage-runner.sh"

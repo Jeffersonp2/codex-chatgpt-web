@@ -15,8 +15,10 @@ export const DEFAULT_PROVIDER_RUNTIME_SETTINGS: ProviderRuntimeSettings = Object
   enabled: true,
   url: "http://127.0.0.1",
   host: "127.0.0.1",
-  port: 11435,
+  port: 11436,
 });
+
+const LEGACY_PROVIDER_PORT = 11435;
 
 export function providerSettingsPath(): string {
   return join(getConfigDir(), "provider.json");
@@ -44,7 +46,6 @@ function normalizeProviderUrl(value: unknown): { url: string; host: "127.0.0.1" 
   }
   return {
     url: parsed.hostname === "localhost" ? "http://localhost" : "http://127.0.0.1",
-    // Keep the listener IPv4-loopback-only even when the friendly URL uses localhost.
     host: "127.0.0.1",
   };
 }
@@ -60,12 +61,14 @@ function normalizeProviderPort(value: unknown): number {
 export function normalizeProviderRuntimeSettings(value: unknown): ProviderRuntimeSettings {
   const input = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const endpoint = normalizeProviderUrl(input.url);
+  const configuredPort = normalizeProviderPort(input.port ?? DEFAULT_PROVIDER_RUNTIME_SETTINGS.port);
   return {
     version: 1,
     enabled: input.enabled === undefined ? DEFAULT_PROVIDER_RUNTIME_SETTINGS.enabled : input.enabled === true,
     url: endpoint.url,
     host: endpoint.host,
-    port: normalizeProviderPort(input.port ?? DEFAULT_PROVIDER_RUNTIME_SETTINGS.port),
+    // 11435 was the temporary codex-chatgpt-web provider port. TEAMSIX owns 11436.
+    port: configuredPort === LEGACY_PROVIDER_PORT ? DEFAULT_PROVIDER_RUNTIME_SETTINGS.port : configuredPort,
   };
 }
 
@@ -76,7 +79,7 @@ export function loadProviderRuntimeSettings(): ProviderRuntimeSettings {
     return normalizeProviderRuntimeSettings(JSON.parse(readFileSync(path, "utf8")));
   } catch (error) {
     throw new Error(
-      `Invalid 9Router provider settings at ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      `Invalid TEAMSIX 9Router provider settings at ${path}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
