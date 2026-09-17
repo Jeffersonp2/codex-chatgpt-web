@@ -30,3 +30,9 @@ jobs:
       - run: bun install
       - run: bun run typecheck
       - run: bun test
+      - run: bun run build:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teamsix-ai-bridge-windows-x64
+          path: teamsix-ai-bridge/dist/teamsix-ai-bridge.exe
+          if-no-files-found: error
