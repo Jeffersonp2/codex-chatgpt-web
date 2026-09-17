@@ -1,10 +1,18 @@
 import { randomUUID } from "node:crypto";
 
+export type TeamsixToolWireType = "function" | "custom" | "tool_search";
+
 export interface ToolDefinition {
   type?: string;
   name?: string;
   description?: string;
   parameters?: unknown;
+  /** TEAMSIX-facing flattened name can differ from the native Codex wire name for namespaces. */
+  teamsixWireName?: string;
+  /** Native Responses call shape required when the tool is returned to Codex. */
+  teamsixWireType?: TeamsixToolWireType;
+  /** Explicit MCP/Responses namespace expected by Codex for namespaced function calls. */
+  teamsixNamespace?: string;
   [key: string]: unknown;
 }
 
@@ -12,6 +20,8 @@ export interface PendingToolCall {
   callId: string;
   name: string;
   arguments: string;
+  wireType?: TeamsixToolWireType;
+  namespace?: string;
   createdAt: number;
 }
 
