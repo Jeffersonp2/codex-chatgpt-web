@@ -41,7 +41,7 @@
     "fast-uri": "3.1.6"
   },
   "build": {
-    "appId": "br.com.teamsix.aibridge",
+    "appId": "dev.codexwebgpt.launcher",
     "productName": "TEAMSIX AI Bridge",
     "artifactName": "teamsix-ai-bridge-${version}-${os}-${arch}.${ext}",
     "asar": true,
@@ -84,7 +84,7 @@
       "target": ["AppImage"]
     },
     "nsis": {
-      "guid": "5edbb916-7626-4c35-b6b7-7d97f873f03a",
+      "guid": "d1a6026a-6210-588e-9a2b-da3936f94e02",
       "oneClick": false,
       "perMachine": false,
       "allowElevation": false,
