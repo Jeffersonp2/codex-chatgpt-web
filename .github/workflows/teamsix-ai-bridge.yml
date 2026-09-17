@@ -6,10 +6,18 @@ on:
       - feature/teamsix-ai-bridge
     paths:
       - 'teamsix-ai-bridge/**'
+      - 'src/provider-server.ts'
+      - 'src/provider-config.ts'
+      - 'src/launcher-cli.ts'
+      - 'launcher/**'
       - '.github/workflows/teamsix-ai-bridge.yml'
   pull_request:
     paths:
       - 'teamsix-ai-bridge/**'
+      - 'src/provider-server.ts'
+      - 'src/provider-config.ts'
+      - 'src/launcher-cli.ts'
+      - 'launcher/**'
       - '.github/workflows/teamsix-ai-bridge.yml'
   workflow_dispatch:
 
@@ -31,7 +39,7 @@ jobs:
       - run: bun run typecheck
       - run: bun test
       - run: bun run build:win
-      - name: Smoke standalone Windows executable
+      - name: Smoke standalone development bridge
         shell: pwsh
         run: |
           $process = Start-Process -FilePath '.\dist\teamsix-ai-bridge.exe' -PassThru -WindowStyle Hidden
@@ -45,7 +53,7 @@ jobs:
               } catch {}
             }
             if (-not $models -or -not $models.data -or $models.data.Count -lt 1) {
-              throw 'Compiled TEAMSIX provider did not answer /v1/models'
+              throw 'Compiled TEAMSIX development bridge did not answer /v1/models'
             }
             $models.data | Select-Object id, owned_by | Format-Table -AutoSize
           } finally {
@@ -53,6 +61,6 @@ jobs:
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: teamsix-ai-bridge-windows-x64
+          name: teamsix-ai-bridge-core-windows-x64
           path: teamsix-ai-bridge/dist/teamsix-ai-bridge.exe
           if-no-files-found: error
