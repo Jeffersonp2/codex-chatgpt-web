@@ -73,8 +73,6 @@ export function startProviderServer(
     const target = new URL(pathname, upstreamBase);
     const forwarded = new Request(target, req);
 
-    // 9Router credentials are local provider credentials. They must never become
-    // upstream OpenAI credentials if the request is accidentally misrouted.
     forwarded.headers.delete("authorization");
     forwarded.headers.delete("host");
     forwarded.headers.delete("content-length");
@@ -100,7 +98,6 @@ export function startProviderServer(
         upstream = await response.json() as Record<string, unknown>;
       }
     } catch {
-      // Provider health remains readable even when the browser-backed daemon is offline.
     }
 
     return Response.json({
@@ -200,7 +197,7 @@ if (import.meta.main) {
       log: false,
     });
     process.stdout.write(
-      `codex-chatgpt-web provider ${VERSION} listening on ${providerEndpoint({ ...settings, port: server.port })}\n`
+      `codex-chatgpt-web provider ${VERSION} listening on ${providerEndpoint({ ...settings, port: server.port ?? settings.port })}\n`
         + `upstream codex-chatgpt-web daemon: http://${config.host}:${config.port}/v1\n`
         + `9Router provider type: OpenAI Responses compatible\n`,
     );
