@@ -87,6 +87,14 @@ function providerCoreHome() {
   return configured ? resolveUserPath(configured) : path.join(os.homedir(), ".codex-chatgpt-web");
 }
 
+function routerManagedProviderEnabled(coreHome = providerCoreHome()) {
+  try {
+    return readProviderSettings(coreHome).enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 function registerProviderSettingsIpc() {
   let electron;
   try {
@@ -106,13 +114,93 @@ function registerProviderSettingsIpc() {
   return true;
 }
 
+function installRouterManagedRuntimeHooks() {
+  const patchKey = Symbol.for("codex-web-gpt.router-managed-runtime-hooks");
+  if (globalThis[patchKey]) return true;
+
+  let RuntimeHost;
+  try {
+    ({ RuntimeHost } = require("./runtime.cjs"));
+  } catch {
+    return false;
+  }
+  if (!RuntimeHost?.prototype) return false;
+
+  const originalUpgradeManagedRuntime = RuntimeHost.prototype.upgradeManagedRuntime;
+  const originalConnectBridgeRoute = RuntimeHost.prototype.connectBridgeRoute;
+  const originalRestoreBridgeRoute = RuntimeHost.prototype.restoreBridgeRoute;
+  const originalRestoreBridgeRouteWithinOperation = RuntimeHost.prototype.restoreBridgeRouteWithinOperation;
+
+  const routerManagedFor = (host) => host?.launcherProfile === "production"
+    && routerManagedProviderEnabled(host?.coreHome || providerCoreHome());
+
+  RuntimeHost.prototype.upgradeManagedRuntime = async function (...args) {
+    if (routerManagedFor(this)) {
+      this.logger?.info?.("runtime.router_managed_upgrade_skipped", {
+        reason: "9Router provider owns the Codex route",
+      });
+      return { updated: false, routerManaged: true };
+    }
+    return originalUpgradeManagedRuntime.apply(this, args);
+  };
+
+  RuntimeHost.prototype.connectBridgeRoute = async function (...args) {
+    if (routerManagedFor(this)) {
+      this.logger?.info?.("bridge.router_managed_connect_skipped", {
+        reason: "Codex remains routed through 9Router",
+      });
+      return {
+        installed: true,
+        active: false,
+        changed: false,
+        routerManaged: true,
+      };
+    }
+    return originalConnectBridgeRoute.apply(this, args);
+  };
+
+  RuntimeHost.prototype.restoreBridgeRoute = async function (...args) {
+    if (routerManagedFor(this)) {
+      this.logger?.info?.("bridge.router_managed_restore_skipped", {
+        reason: "Launcher does not own the Codex route while 9Router provider is enabled",
+      });
+      return {
+        installed: true,
+        active: false,
+        changed: false,
+        restored: false,
+        routerManaged: true,
+      };
+    }
+    return originalRestoreBridgeRoute.apply(this, args);
+  };
+
+  RuntimeHost.prototype.restoreBridgeRouteWithinOperation = async function (...args) {
+    if (routerManagedFor(this)) {
+      return {
+        installed: true,
+        active: false,
+        changed: false,
+        restored: false,
+        routerManaged: true,
+      };
+    }
+    return originalRestoreBridgeRouteWithinOperation.apply(this, args);
+  };
+
+  globalThis[patchKey] = true;
+  return true;
+}
+
 registerProviderSettingsIpc();
+installRouterManagedRuntimeHooks();
 
 module.exports = {
   DEFAULT_PROVIDER_SETTINGS,
   providerSettingsPath,
   readProviderSettings,
   registerProviderSettingsIpc,
+  routerManagedProviderEnabled,
   validateProviderSettings,
   writeProviderSettings,
 };
