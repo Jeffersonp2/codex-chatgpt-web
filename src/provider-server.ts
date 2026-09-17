@@ -149,11 +149,12 @@ export function startProviderServer(
     return proxy(forwarded, "/v1/responses/compact");
   }
 
-  const server = Bun.serve({
+  let boundPort = port;
+  const server: ReturnType<typeof Bun.serve> = Bun.serve({
     hostname: host,
     port,
     idleTimeout: 0,
-    async fetch(req) {
+    async fetch(req): Promise<Response> {
       const url = new URL(req.url);
 
       if (req.method === "GET" && url.pathname === "/") {
@@ -165,7 +166,7 @@ export function startProviderServer(
           ...health,
           service: "teamsix-ai-bridge",
           version: VERSION,
-          provider_url: `http://${host}:${server.port}/v1`,
+          provider_url: `http://${host}:${boundPort}/v1`,
           embedded_runtime_url: `${upstreamBase}/v1`,
         }, { status: health.status === "ok" ? 200 : 503 });
       }
@@ -246,12 +247,13 @@ export function startProviderServer(
       return jsonError(404, "not_found", `TEAMSIX endpoint not found: ${req.method} ${url.pathname}`);
     },
   });
+  boundPort = server.port ?? port;
 
   if (options.unref) server.unref();
 
   if (options.log !== false) {
     process.stdout.write(
-      `TEAMSIX AI Bridge ${VERSION} listening on http://${host}:${server.port}/v1\n`
+      `TEAMSIX AI Bridge ${VERSION} listening on http://${host}:${boundPort}/v1\n`
         + `embedded ChatGPT Web runtime: ${upstreamBase}/v1\n`
         + `tool mode: ${engine.config.toolsMode}\n`
         + `9Router provider type: OpenAI Responses compatible\n`,
