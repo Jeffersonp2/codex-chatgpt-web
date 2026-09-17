@@ -25,7 +25,7 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  verify-core:
     runs-on: windows-latest
     defaults:
       run:
@@ -63,4 +63,38 @@ jobs:
         with:
           name: teamsix-ai-bridge-core-windows-x64
           path: teamsix-ai-bridge/dist/teamsix-ai-bridge.exe
+          if-no-files-found: error
+
+  package-desktop-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install root dependencies
+        run: bun install --frozen-lockfile
+      - name: Install launcher dependencies
+        working-directory: launcher
+        run: bun install --frozen-lockfile
+      - name: Prepare AVX2-independent embedded Bun runtime
+        shell: pwsh
+        run: ./scripts/prepare-windows-baseline-bun.ps1 -Version 1.4.0 -GitHubEnv $env:GITHUB_ENV
+      - name: Typecheck root integration
+        run: bun run typecheck
+      - name: Typecheck desktop launcher
+        run: bun run launcher:typecheck
+      - name: Package TEAMSIX AI Bridge desktop
+        run: bun run app:package
+      - name: Smoke installed TEAMSIX desktop package
+        run: bun run app:smoke
+      - name: Show packaged artifacts
+        shell: pwsh
+        run: Get-ChildItem .\launcher\artifacts | Select-Object Name,Length | Format-Table -AutoSize
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teamsix-ai-bridge-desktop-windows-x64
+          path: |
+            launcher/artifacts/teamsix-ai-bridge-*-win-x64.exe
+            launcher/artifacts/checksums.txt
           if-no-files-found: error
