@@ -23,7 +23,7 @@ async function runCombinedServe(args: string[]): Promise<void> {
       });
       stdout.write(
         `codex-chatgpt-web ${VERSION} listening on http://${config.host}:${core.port}/v1 (${config.mode})\n`
-          + `9Router provider listening on ${providerEndpoint({ ...providerSettings, port: provider.port })}\n`,
+          + `9Router provider listening on ${providerEndpoint({ ...providerSettings, port: provider.port ?? providerSettings.port })}\n`,
       );
     } else {
       stdout.write(
