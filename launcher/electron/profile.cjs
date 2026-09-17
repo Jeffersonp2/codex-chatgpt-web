@@ -23,6 +23,9 @@ function resolveLauncherProfile({
   }
   const development = argv.includes("--dev-profile");
   if (!development) {
+    // TEAMSIX is a custom 9Router build. Never let the original upstream auto-updater replace it.
+    process.env.TEAMSIX_DISABLE_UPDATES = "1";
+
     // Keep the existing storage locations during the TEAMSIX migration so the authenticated
     // ChatGPT browser partition and proven runtime configuration continue to work. TEAMSIX is the
     // only user-facing app; codex-chatgpt-web is now an embedded implementation detail.
