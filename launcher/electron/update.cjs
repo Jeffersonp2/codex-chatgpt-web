@@ -258,7 +258,8 @@ function createUpdateController({
 }) {
   const deps = { ...defaultDependencies(), ...dependencies };
   const supportedAsset = releaseAssetName(currentVersion, platform, arch);
-  let state = packaged && supportedAsset ? { status: "idle" } : { status: "disabled" };
+  const updatesDisabled = process.env.TEAMSIX_DISABLE_UPDATES === "1";
+  let state = !updatesDisabled && packaged && supportedAsset ? { status: "idle" } : { status: "disabled" };
   let checked = false;
   let pending = null;
   let candidate = null;
