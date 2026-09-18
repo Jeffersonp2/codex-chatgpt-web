@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { makeToolContractMessage, parseToolCall } from "../src/tool-bridge";
+import { containsToolCallSentinel, makeToolContractMessage, parseToolCall } from "../src/tool-bridge";
 
 const localTool = {
   type: "function",
@@ -35,5 +35,11 @@ describe("tool relay helpers", () => {
       'TEAMSIX_TOOL_CALL:{"name":"unknown_tool","arguments":{}}',
       [localTool],
     )).toBeUndefined();
+  });
+
+  test("recognizes literal and Markdown-escaped sentinels for leak protection", () => {
+    expect(containsToolCallSentinel('TEAMSIX_TOOL_CALL:{"name":"write_file","arguments":{}}')).toBe(true);
+    expect(containsToolCallSentinel('TEAMSIX\\_TOOL\\_CALL:{"name":"write_file","arguments":{}}')).toBe(true);
+    expect(containsToolCallSentinel("ordinary final answer")).toBe(false);
   });
 });

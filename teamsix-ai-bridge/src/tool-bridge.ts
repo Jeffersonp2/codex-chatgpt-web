@@ -49,6 +49,8 @@ export function makeToolContractMessage(tools: ToolDefinition[], turnId: string)
     "You have access to the local client tools listed below. The TEAMSIX bridge, not ChatGPT, executes them.",
     "These tools may include Codex filesystem/terminal tools, Computer Use, skills, MCP namespaces and connected Codex plugins.",
     "When a tool is required, do not claim that you executed it and do not fabricate its result.",
+    "Infer tool use from the user's ordinary natural-language request. Never require the user to name exec_command, MCP, function_call, or another internal tool protocol.",
+    "When exec_command exposes sandbox_permissions, prefer use_default. Request escalated permissions only after a real permission failure or when the requested action inherently requires them.",
     `Return exactly one line in this format and nothing else: ${TOOL_SENTINEL}:{\"name\":\"tool_name\",\"arguments\":{...}}`,
     `The payload after ${TOOL_SENTINEL}: MUST be valid JSON accepted by JSON.parse.`,
     "Do not Markdown-escape underscores in the sentinel, tool name, or arguments. Write TEAMSIX_TOOL_CALL and names such as exec_command literally, never TEAMSIX\\_TOOL\\_CALL or exec\\_command.",
@@ -89,6 +91,10 @@ export function extractResponseText(response: unknown): string {
 export interface ParsedToolCall {
   name: string;
   arguments: string;
+}
+
+export function containsToolCallSentinel(text: string): boolean {
+  return text.replaceAll("\\_", "_").includes(`${TOOL_SENTINEL}:`);
 }
 
 function extractFirstJsonObject(value: string): string | undefined {

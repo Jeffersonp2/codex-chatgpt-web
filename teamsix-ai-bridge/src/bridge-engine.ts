@@ -3,6 +3,7 @@ import { PluginHub } from "./plugin-hub";
 import { mapTeamsixModelToUpstream, normalizeResponsesRequest } from "./request-normalizer";
 import { SessionStore, newMessageId, type ToolDefinition } from "./session-store";
 import {
+  containsToolCallSentinel,
   extractResponseText,
   makeToolContractMessage,
   parseToolCall,
@@ -240,7 +241,24 @@ export class BridgeEngine {
         };
       }
 
-      const toolCall = parseToolCall(extractResponseText(payload), allTools);
+      const responseText = extractResponseText(payload);
+      const toolCall = parseToolCall(responseText, allTools);
+      if (!toolCall && containsToolCallSentinel(responseText)) {
+        return {
+          status: 502,
+          streamRequested,
+          nativeCodexIdentity: normalized.nativeCodexIdentity,
+          threadId: session.threadId,
+          turnId: normalized.identity.turnId,
+          payload: {
+            error: {
+              type: "server_error",
+              code: "teamsix_tool_call_parse_error",
+              message: "ChatGPT requested a TEAMSIX client tool, but the internal tool payload could not be parsed safely.",
+            },
+          },
+        };
+      }
       if (!toolCall) {
         return {
           status: upstream.status,

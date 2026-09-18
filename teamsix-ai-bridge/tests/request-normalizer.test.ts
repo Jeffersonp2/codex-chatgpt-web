@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mapTeamsixModelToUpstream, normalizeResponsesRequest } from "../src/request-normalizer";
+import { mapTeamsixModelToUpstream, normalizeResponsesRequest, parseTeamsixModelSelection } from "../src/request-normalizer";
 
 describe("request normalizer", () => {
   test("synthesizes turn identity for a generic Responses request", () => {
@@ -90,5 +90,30 @@ describe("request normalizer", () => {
     expect(mapTeamsixModelToUpstream("teamsix/chatgpt-web/high")).toBe("chatgpt-web/high");
     expect(mapTeamsixModelToUpstream("cgw/chatgpt-web/medium")).toBe("chatgpt-web/medium");
     expect(mapTeamsixModelToUpstream("chatgpt-web/light")).toBe("chatgpt-web/light");
+  });
+
+  test("accepts 9Router chat-surface aliases without leaking suffixes upstream", () => {
+    expect(parseTeamsixModelSelection("teamsix/chatgpt-web/high@normal"))
+      .toEqual({ model: "chatgpt-web/high", chatModeOverride: "normal" });
+    expect(parseTeamsixModelSelection("teamsix/chatgpt-web/high@temporary"))
+      .toEqual({ model: "chatgpt-web/high", chatModeOverride: "temporary" });
+    expect(parseTeamsixModelSelection("teamsix/chatgpt-web/high@auto"))
+      .toEqual({ model: "chatgpt-web/high", chatModeOverride: "auto" });
+    expect(mapTeamsixModelToUpstream("teamsix/chatgpt-web/high@normal")).toBe("chatgpt-web/high");
+  });
+
+  test("reads optional chat-mode hints and detects structural image generation", () => {
+    const normalized = normalizeResponsesRequest({
+      model: "teamsix/chatgpt-web/high",
+      client_metadata: { "x-teamsix-chat-mode": "temporary" },
+      input: "make an image",
+      tools: [{
+        type: "namespace",
+        name: "image_gen",
+        tools: [{ type: "function", name: "imagegen", parameters: { type: "object" } }],
+      }],
+    });
+    expect(normalized.clientChatMode).toBe("temporary");
+    expect(normalized.imageGenerationRequested).toBe(true);
   });
 });
