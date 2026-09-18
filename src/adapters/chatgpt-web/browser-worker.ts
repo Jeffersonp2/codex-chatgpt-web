@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright-core";
@@ -3953,6 +3953,85 @@ export class ChatGptBrowserWorker {
     return { effort: mode.displayLabel, response: CHATGPT_SMOKE_EXPECTED };
   }
 
+  private async captureGeneratedImage(
+    responseTurn: Locator,
+    turn: BrowserTurn,
+  ): Promise<{ path: string; mime_type: string; sha256: string } | undefined> {
+    const images = responseTurn.locator("img").filter({ visible: true });
+    const count = await images.count();
+    let best: { locator: Locator; area: number } | undefined;
+
+    for (let index = 0; index < count; index += 1) {
+      const locator = images.nth(index);
+      const dimensions = await locator.evaluate(element => {
+        if (!(element instanceof HTMLImageElement)) return undefined;
+        const rect = element.getBoundingClientRect();
+        const width = Math.max(element.naturalWidth, rect.width);
+        const height = Math.max(element.naturalHeight, rect.height);
+        const source = element.currentSrc || element.src;
+        return source ? { width, height } : undefined;
+      }).catch(() => undefined);
+      if (!dimensions || dimensions.width < 256 || dimensions.height < 256) continue;
+      const area = dimensions.width * dimensions.height;
+      if (!best || area > best.area) best = { locator, area };
+    }
+
+    if (!best) return undefined;
+
+    let bytes: Uint8Array | undefined;
+    let mimeType = "image/png";
+    const fetched = await best.locator.evaluate(async element => {
+      if (!(element instanceof HTMLImageElement)) return undefined;
+      const source = element.currentSrc || element.src;
+      if (!source) return undefined;
+      try {
+        const response = await fetch(source, { credentials: "include" });
+        if (!response.ok) return undefined;
+        const blob = await response.blob();
+        const raw = new Uint8Array(await blob.arrayBuffer());
+        let binary = "";
+        const chunkSize = 0x8000;
+        for (let offset = 0; offset < raw.length; offset += chunkSize) {
+          binary += String.fromCharCode(...raw.subarray(offset, offset + chunkSize));
+        }
+        return {
+          base64: btoa(binary),
+          mimeType: blob.type || "image/png",
+        };
+      } catch {
+        return undefined;
+      }
+    }).catch(() => undefined);
+
+    if (fetched?.base64) {
+      const decoded = Buffer.from(fetched.base64, "base64");
+      if (decoded.length > 0 && decoded.length <= 32 * 1024 * 1024) {
+        bytes = decoded;
+        if (/^image\/(?:png|jpeg|webp)$/i.test(fetched.mimeType)) mimeType = fetched.mimeType.toLowerCase();
+      }
+    }
+
+    if (!bytes) {
+      const screenshot = await best.locator.screenshot({ type: "png" });
+      if (screenshot.length === 0 || screenshot.length > 32 * 1024 * 1024) return undefined;
+      bytes = screenshot;
+      mimeType = "image/png";
+    }
+
+    const owner = (turn.conversationKey ?? turn.traceId)
+      .replace(/[^A-Za-z0-9_-]+/g, "_")
+      .slice(0, 128) || "thread";
+    const id = `ig_${randomUUID().replaceAll("-", "")}`;
+    const extension = mimeType === "image/jpeg" ? "jpg" : mimeType === "image/webp" ? "webp" : "png";
+    const path = join(getConfigDir(), "generated-images", owner, `${id}.${extension}`);
+    atomicWriteFile(path, bytes);
+    return {
+      path,
+      mime_type: mimeType,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  }
+
   private async attachFiles(page: Page, prompt: CompiledChatGptWebPrompt): Promise<void> {
     const files = chatGptPromptFilePayloads(prompt);
     if (files.length === 0) return;
@@ -5324,6 +5403,27 @@ export class ChatGptBrowserWorker {
         responseDomCache.snapshot = undefined;
         await new Promise(resolveSleep => setTimeout(resolveSleep, 250));
        }
+      }
+
+      if (turn.captureGeneratedImages && (turn.chatMode ?? "temporary") === "normal") {
+        await diagnostics.capture(page, "image-generation-detected");
+        try {
+          const capturedImage = await this.captureGeneratedImage(responseTurn.locator, turn);
+          if (capturedImage) {
+            const marker = `\n\n<teamsix_generated_image>${JSON.stringify(capturedImage)}</teamsix_generated_image>`;
+            finalText += marker;
+            turn.onTextDelta(marker);
+            await diagnostics.capture(page, "image-generation-completed");
+          } else {
+            await diagnostics.capture(page, "image-generation-failed");
+            console.warn(`[chatgpt-web] browser turn ${turn.traceId} completed an image request without a capturable image element`);
+          }
+        } catch (error) {
+          await diagnostics.capture(page, "image-generation-failed", error);
+          console.warn(
+            `[chatgpt-web] browser turn ${turn.traceId} could not capture generated image: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
       }
 
       if (this.context && this.config.browserHost === "managed-chrome") {

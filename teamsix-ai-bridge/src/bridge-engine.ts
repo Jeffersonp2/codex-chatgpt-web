@@ -1,4 +1,5 @@
 import type { BridgeConfig, TeamsixChatMode } from "./config";
+import { consumeGeneratedImageMarker, synthesizeImageGenerationResponse } from "./image-bridge";
 import { PluginHub } from "./plugin-hub";
 import { mapTeamsixModelToUpstream, normalizeResponsesRequest } from "./request-normalizer";
 import { SessionStore, newMessageId, type ToolDefinition } from "./session-store";
@@ -242,6 +243,36 @@ export class BridgeEngine {
       }
 
       const responseText = extractResponseText(payload);
+      let generatedImage;
+      try {
+        generatedImage = consumeGeneratedImageMarker(responseText);
+      } catch (error) {
+        return {
+          status: 502,
+          streamRequested,
+          nativeCodexIdentity: normalized.nativeCodexIdentity,
+          threadId: session.threadId,
+          turnId: normalized.identity.turnId,
+          payload: {
+            error: {
+              type: "server_error",
+              code: "teamsix_image_capture_invalid",
+              message: error instanceof Error ? error.message : "TEAMSIX generated-image capture was invalid.",
+            },
+          },
+        };
+      }
+      if (generatedImage) {
+        return {
+          status: 200,
+          payload: { ...synthesizeImageGenerationResponse(payload, generatedImage), model: requestedModel },
+          streamRequested,
+          nativeCodexIdentity: normalized.nativeCodexIdentity,
+          threadId: session.threadId,
+          turnId: normalized.identity.turnId,
+        };
+      }
+
       const toolCall = parseToolCall(responseText, allTools);
       if (!toolCall && containsToolCallSentinel(responseText)) {
         return {
