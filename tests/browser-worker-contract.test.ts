@@ -606,6 +606,7 @@ test("an accepted Full-mode send survives one stalled DOM probe and a later MCP 
     last() { return this; },
     getByText() { return this; },
     isVisible: async () => false,
+    count: async () => 0, // TEAMSIX MOCK: no visible blocking dialogs
   };
   const assistantLocator = { id: "assistant-turn" };
   const page = {
@@ -618,6 +619,7 @@ test("an accepted Full-mode send survives one stalled DOM probe and a later MCP 
   const sendButton = {
     waitFor: async () => {},
     isEnabled: async () => true,
+    boundingBox: async () => null, // TEAMSIX MOCK: send geometry
     press: async () => { sendPresses += 1; },
   };
   const composer = {
@@ -725,6 +727,7 @@ test("Bigger Context send activation keeps the outer stage budget instead of res
     filter() { return this; },
     last() { return this; },
     isVisible: async () => false,
+    count: async () => 0, // TEAMSIX MOCK: no visible blocking dialogs
   };
   const page = {
     isClosed: () => false,
@@ -734,6 +737,7 @@ test("Bigger Context send activation keeps the outer stage budget instead of res
   const sendButton = {
     waitFor: async () => {},
     isEnabled: async () => true,
+    boundingBox: async () => null, // TEAMSIX MOCK: send geometry
     press: async (
       _key: string,
       options?: { noWaitAfter?: boolean; signal?: AbortSignal; timeout?: number },

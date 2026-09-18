@@ -50,6 +50,11 @@ export function makeToolContractMessage(tools: ToolDefinition[], turnId: string)
     "These tools may include Codex filesystem/terminal tools, Computer Use, skills, MCP namespaces and connected Codex plugins.",
     "When a tool is required, do not claim that you executed it and do not fabricate its result.",
     `Return exactly one line in this format and nothing else: ${TOOL_SENTINEL}:{\"name\":\"tool_name\",\"arguments\":{...}}`,
+    `The payload after ${TOOL_SENTINEL}: MUST be valid JSON accepted by JSON.parse.`,
+    "Do not Markdown-escape underscores in the sentinel, tool name, or arguments. Write TEAMSIX_TOOL_CALL and names such as exec_command literally, never TEAMSIX\\_TOOL\\_CALL or exec\\_command.",
+    "For Windows paths prefer forward slashes, for example D:/LLMs/file.txt.",
+    "If a backslash is necessary inside a JSON string it MUST be escaped as \\\\.",
+    "For exec_command prefer semicolons between PowerShell commands instead of JSON newline escapes.",
     "Use the tool name exactly as listed. Namespaced plugin/MCP tools are already flattened to their exact TEAMSIX-visible name.",
     "After the client executes the tool, its real result will be provided in a later message. Then continue the task.",
     "If no tool is required, answer normally and never emit the sentinel.",
@@ -86,24 +91,212 @@ export interface ParsedToolCall {
   arguments: string;
 }
 
-export function parseToolCall(text: string, tools: ToolDefinition[]): ParsedToolCall | undefined {
-  const index = text.indexOf(`${TOOL_SENTINEL}:`);
-  if (index < 0) return undefined;
-  const suffix = text.slice(index + TOOL_SENTINEL.length + 1).trim();
-  const firstLine = suffix.split(/\r?\n/, 1)[0]?.trim();
-  if (!firstLine) return undefined;
-  let parsed: Record<string, unknown>;
+function extractFirstJsonObject(value: string): string | undefined {
+  const start = value.indexOf("{");
+  if (start < 0) return undefined;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < value.length; index += 1) {
+    const char = value[index] ?? "";
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return value.slice(start, index + 1);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function repairToolCallJsonBackslashes(value: string): string {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  let inWindowsPath = false;
+  let windowsPathSingleQuoted = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index] ?? "";
+
+    if (!inString) {
+      output += char;
+
+      if (char === '"') {
+        inString = true;
+      }
+
+      continue;
+    }
+
+    if (inWindowsPath) {
+      if (char === "\\") {
+        output += "\\\\";
+        continue;
+      }
+
+      if (windowsPathSingleQuoted && char === "'") {
+        output += char;
+        inWindowsPath = false;
+        windowsPathSingleQuoted = false;
+        continue;
+      }
+
+      if (!windowsPathSingleQuoted && char === '"') {
+        output += char;
+        inWindowsPath = false;
+        inString = false;
+        continue;
+      }
+
+      output += char;
+      continue;
+    }
+
+    if (escaped) {
+      output += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '"') {
+      output += char;
+      inString = false;
+      continue;
+    }
+
+    if (char !== "\\") {
+      output += char;
+      continue;
+    }
+
+    const previous = value[index - 1] ?? "";
+    const drive = value[index - 2] ?? "";
+    const beforeDrive = value[index - 3] ?? "";
+
+    const beginsWindowsDrivePath =
+      previous === ":"
+      && /^[A-Za-z]$/.test(drive);
+
+    if (beginsWindowsDrivePath) {
+      inWindowsPath = true;
+      windowsPathSingleQuoted = beforeDrive === "'";
+      output += "\\\\";
+      continue;
+    }
+
+    const next = value[index + 1] ?? "";
+
+    const validJsonEscape =
+      next === '"'
+      || next === "\\"
+      || next === "/"
+      || "bfnrtu".includes(next);
+
+    if (validJsonEscape) {
+      output += char;
+      escaped = true;
+      continue;
+    }
+
+    // Unknown JSON escape such as \L or \c.
+    // Preserve it as a literal backslash.
+    output += "\\\\";
+  }
+
+  return output;
+}
+
+function parseToolCallJson(value: string): Record<string, unknown> | undefined {
   try {
-    parsed = JSON.parse(firstLine) as Record<string, unknown>;
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch {
+    // ChatGPT sometimes emits Windows paths with raw backslashes.
+  }
+
+  const repaired = repairToolCallJsonBackslashes(value);
+
+  try {
+    return JSON.parse(repaired) as Record<string, unknown>;
   } catch {
     return undefined;
   }
-  const name = typeof parsed.name === "string" ? parsed.name.trim() : "";
+}
+
+export function parseToolCall(text: string, tools: ToolDefinition[]): ParsedToolCall | undefined {
+  // ChatGPT can Markdown-escape underscores even inside what visually looks
+  // like a raw tool protocol line:
+  // TEAMSIX\_TOOL\_CALL / exec\_command.
+  //
+  // A single backslash before "_" is not meaningful JSON escaping, so
+  // normalize it before locating/parsing the TEAMSIX sentinel.
+  const normalizedText = text.replaceAll("\\_", "_");
+  const index = normalizedText.indexOf(`${TOOL_SENTINEL}:`);
+  if (index < 0) return undefined;
+
+  const suffix = normalizedText
+    .slice(index + TOOL_SENTINEL.length + 1)
+    .trim();
+
+  const jsonText = extractFirstJsonObject(suffix);
+  if (!jsonText) return undefined;
+
+  const parsed = parseToolCallJson(jsonText);
+  if (!parsed) return undefined;
+
+  const name = typeof parsed.name === "string"
+    ? parsed.name.trim()
+    : "";
+
   if (!name) return undefined;
-  const allowed = new Set(printableTools(tools).map(tool => String(tool.name)));
+
+  const allowed = new Set(
+    printableTools(tools).map(tool => String(tool.name)),
+  );
+
   if (!allowed.has(name)) return undefined;
+
   const args = parsed.arguments ?? {};
-  return { name, arguments: typeof args === "string" ? args : JSON.stringify(args) };
+
+  return {
+    name,
+    arguments: typeof args === "string"
+      ? args
+      : JSON.stringify(args),
+  };
 }
 
 function parsedArguments(value: string): Record<string, unknown> {

@@ -2480,7 +2480,114 @@ export class ChatGptBrowserWorker {
       }
     }
     await captureDiagnostic?.("effort-selected");
+
+    const originalEffortDialog = activation.menu.locator(
+      "xpath=ancestor::*[@role='dialog'][1]",
+    );
+    const originalEffortDialogCount = await originalEffortDialog.count();
+
+    if (originalEffortDialogCount > 1) {
+      throw chatGptModelControlUnavailableError(
+        `ChatGPT effort picker exposed ${originalEffortDialogCount} original parent dialogs`,
+      );
+    }
+
+    const originalEffortDialogHandle = originalEffortDialogCount === 1
+      ? await originalEffortDialog.elementHandle()
+      : null;
+
     await page.keyboard.press("Escape");
+    await settleChatGptUi();
+
+    if (
+      originalEffortDialogHandle
+      && await originalEffortDialogHandle.isVisible().catch(() => false)
+    ) {
+      await page.keyboard.press("Escape");
+      await settleChatGptUi();
+    }
+
+    if (
+      originalEffortDialogHandle
+      && await originalEffortDialogHandle.isVisible().catch(() => false)
+    ) {
+      await captureDiagnostic?.("effort-dialog-still-open");
+
+      throw chatGptModelControlUnavailableError(
+        "ChatGPT original effort picker dialog remained open after effort selection",
+      );
+    }
+
+    // ChatGPT may close the original effort popup and immediately mount
+    // the same responsive effort surface inside a new full-screen dialog.
+    // Close only a dialog that structurally contains visible effort UI.
+    const visibleDialogs = page
+      .locator('[role="dialog"]')
+      .filter({ visible: true });
+
+    let remountedEffortDialogHandle:
+      Awaited<ReturnType<Locator["elementHandle"]>> | null = null;
+
+    const visibleDialogCount = await visibleDialogs.count();
+
+    for (let index = 0; index < visibleDialogCount; index += 1) {
+      const candidate = visibleDialogs.nth(index);
+
+      const visibleEffortItemCount = await candidate
+        .locator(CHATGPT_EFFORT_ITEM_SELECTOR)
+        .filter({ visible: true })
+        .count();
+
+      const visibleEffortSliderCount = await candidate
+        .locator(CHATGPT_EFFORT_SLIDER_CONTAINER_SELECTOR)
+        .filter({ visible: true })
+        .count();
+
+      if (
+        visibleEffortItemCount === 0
+        && visibleEffortSliderCount === 0
+      ) {
+        continue;
+      }
+
+      if (remountedEffortDialogHandle) {
+        await captureDiagnostic?.("effort-remounted-dialog-ambiguous");
+
+        throw chatGptModelControlUnavailableError(
+          "ChatGPT exposed more than one remounted effort dialog",
+        );
+      }
+
+      remountedEffortDialogHandle = await candidate.elementHandle();
+    }
+
+    if (remountedEffortDialogHandle) {
+      await captureDiagnostic?.("effort-remounted-dialog-detected");
+
+      await page.keyboard.press("Escape");
+      await settleChatGptUi();
+
+      if (
+        await remountedEffortDialogHandle.isVisible().catch(() => false)
+      ) {
+        await page.keyboard.press("Escape");
+        await settleChatGptUi();
+      }
+
+      if (
+        await remountedEffortDialogHandle.isVisible().catch(() => false)
+      ) {
+        await captureDiagnostic?.("effort-remounted-dialog-still-open");
+
+        throw chatGptModelControlUnavailableError(
+          "ChatGPT remounted effort dialog remained open after effort selection",
+        );
+      }
+
+      await captureDiagnostic?.("effort-remounted-dialog-dismissed");
+    }
+
+    await captureDiagnostic?.("effort-selection-dismissed");
     return mode;
   }
 
@@ -2929,17 +3036,44 @@ export class ChatGptBrowserWorker {
 
   private async attachedPromptText(page: Page, abortSignal?: AbortSignal): Promise<string> {
     const composer = await this.activeComposer(page, 30_000, abortSignal);
+
     return composer.evaluate(element => {
       const clone = element.cloneNode(true) as HTMLElement;
+
       clone.querySelectorAll(
         '[data-id^="plugin:"][data-keyword], [data-inline-selection-pill-cursor-target]',
       )
         .forEach(part => part.remove());
+
+      // Lexical can represent pasted plaintext line breaks with <br>.
+      // textContent alone drops those line breaks, producing a false
+      // prompt_attachment_integrity failure.
+      const readPlainText = (node: ChildNode): string => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          return node.textContent ?? "";
+        }
+
+        if (node instanceof HTMLBRElement) {
+          return "\n";
+        }
+
+        if (!(node instanceof HTMLElement)) {
+          return node.textContent ?? "";
+        }
+
+        return [...node.childNodes]
+          .map(child => readPlainText(child))
+          .join("");
+      };
+
       return [...clone.childNodes]
-        .map(child => child.textContent ?? "")
+        .map(child => readPlainText(child))
         .join("\n")
         .trimStart();
-    }, undefined, { timeout: 20_000, signal: abortSignal });
+    }, undefined, {
+      timeout: 20_000,
+      signal: abortSignal,
+    });
   }
 
   private async assertPromptAttached(
@@ -3408,6 +3542,52 @@ export class ChatGptBrowserWorker {
       }
       await settleChatGptUi();
     }
+    // Fail before submission if a modal surface still covers the actual
+    // send control. This prevents Enter from disappearing into a stale
+    // responsive picker/dialog while leaving the prompt untouched.
+    const sendBox = await sendButton.boundingBox();
+    const visibleDialogs = page
+      .locator('[role="dialog"]')
+      .filter({ visible: true });
+
+    let blockingDialogs = 0;
+    const visibleDialogCount = await visibleDialogs.count();
+
+    for (let index = 0; index < visibleDialogCount; index += 1) {
+      const candidate = visibleDialogs.nth(index);
+
+      // A responsive ChatGPT surface may itself be role="dialog" and contain
+      // the composer. Such a dialog cannot be considered an overlay blocking
+      // its own Send button.
+      const ownsSendControl = await candidate
+        .getByTestId("send-button")
+        .filter({ visible: true })
+        .count() > 0;
+
+      if (ownsSendControl) continue;
+
+      const box = await candidate.boundingBox();
+
+      if (!box || !sendBox) continue;
+
+      const overlaps = (
+        box.x < sendBox.x + sendBox.width
+        && box.x + box.width > sendBox.x
+        && box.y < sendBox.y + sendBox.height
+        && box.y + box.height > sendBox.y
+      );
+
+      if (overlaps) blockingDialogs += 1;
+    }
+
+    if (blockingDialogs > 0) {
+      await captureDiagnostic?.("send-blocked-by-dialog");
+
+      throw new Error(
+        `ChatGPT exposed ${blockingDialogs} blocking dialog(s) over the send control`,
+      );
+    }
+
     await captureDiagnostic?.("send-ready");
     const initialToolBatchRevision = externalProgress?.snapshot().lastToolBatchRevision ?? 0;
     await submissionLifecycle?.onSendActivated?.();
@@ -3627,15 +3807,54 @@ export class ChatGptBrowserWorker {
     // delimiters from textContent, and leave the next insertion outside the intended block. The
     // browser's plain-text editing command updates the same focused contenteditable atomically
     // without running those Markdown shortcuts. Exact readback below remains the authority.
-    const inserted = await composer.evaluate(insertPlainTextIntoComposer, text, {
+    let inserted = await composer.evaluate(insertPlainTextIntoComposer, text, {
       timeout: 20_000,
       signal: abortSignal,
     });
     throwIfPromptAttachmentAborted(abortSignal);
+
+    // ChatGPT/Lexical may reject document.execCommand("insertText").
+    // Fall back to Chromium keyboard input before failing the turn.
     if (!inserted) {
-      throw new ChatGptPromptAttachmentIntegrityError(
-        "ChatGPT composer rejected the plain-text editing command",
-      );
+      await composer.focus({
+        signal: abortSignal,
+        timeout: CHATGPT_CONNECTOR_ACTION_TIMEOUT_MS,
+      });
+      throwIfPromptAttachmentAborted(abortSignal);
+
+      // ChatGPT currently rejects document.execCommand("insertText") on
+      // some Lexical composer revisions. A synthetic text/plain paste lets
+      // Lexical own the edit transaction while preserving multiline text.
+      const pasted = await composer.evaluate((element, value) => {
+        const transfer = new DataTransfer();
+        transfer.setData("text/plain", value);
+
+        const event = new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: transfer,
+        });
+
+        element.dispatchEvent(event);
+        return true;
+      }, text, {
+        timeout: 20_000,
+        signal: abortSignal,
+      });
+
+      throwIfPromptAttachmentAborted(abortSignal);
+
+      // Give Lexical/React one UI cycle to commit the paste.
+      await withBrowserTurnAbort(settleChatGptUi(), abortSignal);
+      if (!pasted) {
+        throw new ChatGptPromptAttachmentIntegrityError(
+          "ChatGPT composer rejected the plain-text editing command",
+        );
+      }
+
+      // Exact verification happens immediately afterwards in assertPromptAttached().
+      // Do not use raw textContent here because Lexical represents some newlines as <br>.
+      inserted = true;
     }
   }
 
