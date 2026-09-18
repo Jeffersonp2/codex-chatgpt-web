@@ -4003,11 +4003,11 @@ export class ChatGptBrowserWorker {
       }
     }).catch(() => undefined);
 
-    if (fetched?.base64) {
+    if (fetched?.base64 && /^image\/(?:png|jpeg|webp)$/i.test(fetched.mimeType)) {
       const decoded = Buffer.from(fetched.base64, "base64");
       if (decoded.length > 0 && decoded.length <= 32 * 1024 * 1024) {
         bytes = decoded;
-        if (/^image\/(?:png|jpeg|webp)$/i.test(fetched.mimeType)) mimeType = fetched.mimeType.toLowerCase();
+        mimeType = fetched.mimeType.toLowerCase();
       }
     }
 
