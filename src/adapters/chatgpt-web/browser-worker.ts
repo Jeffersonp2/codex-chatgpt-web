@@ -4888,21 +4888,20 @@ export class ChatGptBrowserWorker {
         );
       }
       if (!reuseConversation) {
-        const chatMode = turn.chatMode ?? "temporary";
+        // TEAMSIX production turns are normal-chat only. Temporary Chat is intentionally not used
+        // because it disables product capabilities such as image generation and has proven less
+        // stable for retained browser automation.
         await this.runStage(
           turn.traceId,
-          chatMode === "normal" ? "normal_chat_preparation" : "temporary_chat_preparation",
+          "normal_chat_preparation",
           browserStageTimeouts.temporaryChatPreparation,
           () => this.prepareChatSurface(
             page,
-            chatMode,
+            "normal",
             checkpoint => diagnostics.capture(page, checkpoint),
           ),
         );
-        await diagnostics.capture(
-          page,
-          chatMode === "normal" ? "chat-mode-normal" : "chat-mode-temporary",
-        );
+        await diagnostics.capture(page, "chat-mode-normal");
       }
       // A retained lease proves the connector binding, not the current model selection.
       // Reconcile the live control before every submission, including retained continuations.
@@ -5063,7 +5062,7 @@ export class ChatGptBrowserWorker {
               await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
               await this.prepareChatSurface(
                 page,
-                turn.chatMode ?? "temporary",
+                "normal",
                 checkpoint => diagnostics.capture(page, checkpoint),
               );
               mode = await this.selectModelAndEffort(
@@ -5405,7 +5404,7 @@ export class ChatGptBrowserWorker {
        }
       }
 
-      if (turn.captureGeneratedImages && (turn.chatMode ?? "temporary") === "normal") {
+      if (turn.captureGeneratedImages) {
         await diagnostics.capture(page, "image-generation-detected");
         try {
           const capturedImage = await this.captureGeneratedImage(responseTurn.locator, turn);

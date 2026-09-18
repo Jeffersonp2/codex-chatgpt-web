@@ -221,7 +221,8 @@ async function run(message: RunMessage): Promise<void> {
     traceId: message.turn.traceId,
     modelId: message.turn.modelId,
     reasoning: message.turn.reasoning,
-    ...(message.turn.chatMode ? { chatMode: message.turn.chatMode } : {}),
+    // The helper is the final browser-process boundary: coerce every routed turn to normal chat.
+    chatMode: "normal",
     ...(message.turn.captureGeneratedImages ? { captureGeneratedImages: true } : {}),
     capabilities: message.turn.capabilities,
     ...(message.turn.nativeConnector ? { nativeConnector: true } : {}),
