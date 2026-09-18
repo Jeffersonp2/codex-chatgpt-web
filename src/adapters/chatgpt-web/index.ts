@@ -1176,7 +1176,7 @@ export function createChatGptWebAdapter(
                 emitRoundEvents(finalReplay);
               } else {
                 session.appendRoundReasoning(roundKey, trace.map(event => event.text));
-                if (replay.length === 0 && !parsed._compactionRequest) {
+                if (replay.length === 0 && !parsed._compactionRequest && !parsed._teamsixChatMode) {
                   emitRoundBatch(buffer => emitReadOnlyContextWarning(parsed, turnCapabilities, buffer));
                 }
                 emitRoundBatch(buffer => emitTraceEvents(trace, buffer));
@@ -1248,7 +1248,7 @@ export function createChatGptWebAdapter(
               const emitNewText = (deltas: string[]) => {
                 if (!bufferStructuredOutput) emitRoundBatch(buffer => emitTextDeltas(deltas, buffer));
               };
-              if (replay.length === 0 && !parsed._compactionRequest) {
+              if (replay.length === 0 && !parsed._compactionRequest && !parsed._teamsixChatMode) {
                 emitRoundBatch(buffer => emitReadOnlyContextWarning(parsed, turnCapabilities, buffer));
               }
               emitNewTrace(session.runtime.trace.drain());
