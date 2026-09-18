@@ -12,10 +12,11 @@ test("TEAMSIX production turns use normal ChatGPT only", async () => {
 });
 
 test("TEAMSIX browser execution is hard-wired to normal chat", () => {
-  const worker = readFileSync("src/adapters/chatgpt-web/browser-worker.ts", "utf8");
-  const adapter = readFileSync("src/adapters/chatgpt-web/index.ts", "utf8");
-  const helper = readFileSync("src/adapters/chatgpt-web/browser-helper-main.ts", "utf8");
-  const prompt = readFileSync("src/adapters/chatgpt-web/prompt.ts", "utf8");
+  const normalizeNewlines = (value: string): string => value.replaceAll("\r\n", "\n");
+  const worker = normalizeNewlines(readFileSync("src/adapters/chatgpt-web/browser-worker.ts", "utf8"));
+  const adapter = normalizeNewlines(readFileSync("src/adapters/chatgpt-web/index.ts", "utf8"));
+  const helper = normalizeNewlines(readFileSync("src/adapters/chatgpt-web/browser-helper-main.ts", "utf8"));
+  const prompt = normalizeNewlines(readFileSync("src/adapters/chatgpt-web/prompt.ts", "utf8"));
 
   expect(worker).toContain('"normal_chat_preparation"');
   expect(worker).toContain('this.prepareChatSurface(\n            page,\n            "normal"');
