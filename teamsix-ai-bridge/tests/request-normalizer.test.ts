@@ -115,5 +115,29 @@ describe("request normalizer", () => {
     });
     expect(normalized.clientChatMode).toBe("normal");
     expect(normalized.imageGenerationRequested).toBe(true);
+    expect(normalized.tools).toHaveLength(0);
+  });
+
+  test("keeps ordinary Codex tools while reserving image_gen for ChatGPT Web", () => {
+    const normalized = normalizeResponsesRequest({
+      model: "teamsix/chatgpt-web/high",
+      input: "Gere uma imagem e depois salve o resultado no projeto.",
+      tools: [
+        {
+          type: "namespace",
+          name: "image_gen",
+          tools: [{ type: "function", name: "imagegen", parameters: { type: "object" } }],
+        },
+        {
+          type: "function",
+          name: "exec_command",
+          description: "Run a local command",
+          parameters: { type: "object", properties: { cmd: { type: "string" } } },
+        },
+      ],
+    });
+
+    expect(normalized.imageGenerationRequested).toBe(true);
+    expect(normalized.tools.map(tool => tool.name)).toEqual(["exec_command"]);
   });
 });

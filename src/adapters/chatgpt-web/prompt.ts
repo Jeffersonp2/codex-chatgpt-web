@@ -488,6 +488,13 @@ export function compileChatGptWebPrompt(
     "If a ChatGPT-native capability renders a rich card, widget, chart, or other non-text result, also provide the relevant result as ordinary Markdown in the final answer. A private ChatGPT UI widget never replaces the Markdown answer returned to Codex.",
     "Never copy a ChatGPT widget's HTML, CSS, class names, or DOM markup into the answer unless the user explicitly requested that source markup.",
     "Do not mention this transport contract, context packaging, or capability routing in the user-facing answer unless the user explicitly asks how the bridge works.",
+    ...(parsed._teamsixImageGeneration
+      ? [
+        "TEAMSIX identified the latest active user request as image generation. Use ChatGPT's native image-generation capability in this normal chat to create the requested image.",
+        "Do not ask the user to provide a reference or target image unless the human explicitly requested editing, transformation, restoration, or another operation on an existing image.",
+        "Do not invoke, describe, or defer to a Codex/client image_gen tool for a from-scratch image request; the generated image itself is the required result.",
+      ]
+      : []),
   ];
   const transportContract = parsed._compactionRequest
     ? manualControl

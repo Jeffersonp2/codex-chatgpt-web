@@ -209,6 +209,16 @@ function flattenToolSpecs(specs: unknown[]): ToolDefinition[] {
     const tool = asRecord(raw);
     if (!tool) continue;
 
+    // Codex can advertise its own image_gen extension, but TEAMSIX image requests must stay on
+    // the ChatGPT Web normal-chat lane so the user's ChatGPT product generates the image. Never
+    // relay image_gen back to Codex as a client-executed local tool.
+    const directName = typeof tool.name === "string" ? tool.name.trim() : "";
+    if (tool.type === "image_generation"
+      || (tool.type === "namespace" && directName === "image_gen")
+      || (tool.type === "function" && ["image_gen", "imagegen", "image_generation"].includes(directName))) {
+      continue;
+    }
+
     if (tool.type === "function") {
       const mapped = functionTool(tool);
       if (mapped) out.push(mapped);
@@ -243,7 +253,7 @@ function flattenToolSpecs(specs: unknown[]): ToolDefinition[] {
     }
 
     // OpenAI-hosted tools are not local Codex capabilities and cannot be round-tripped as a
-    // client-executed call through 9Router. Image generation gets its own TEAMSIX provider later.
+    // client-executed call through 9Router. Image generation is handled by TEAMSIX normal chat.
     if (tool.type === "web_search" || tool.type === "web_search_preview" || tool.type === "image_generation") {
       continue;
     }
