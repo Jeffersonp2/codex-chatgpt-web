@@ -110,3 +110,112 @@ export function responseJsonToSse(response: Record<string, unknown>): Response {
     },
   });
 }
+
+
+/**
+ * Return an SSE response immediately while a buffered TEAMSIX/ChatGPT browser turn completes.
+ *
+ * The current bridge still synthesizes the final Responses event sequence after the upstream browser
+ * result is complete, but this wrapper opens the HTTP response immediately and emits SSE comments so
+ * routers with short response-header/idle timeouts do not disconnect a legitimate long browser turn.
+ */
+export function responsePromiseToSse(
+  responsePromise: Promise<Record<string, unknown>>,
+  heartbeatMs = 2_000,
+): Response {
+  const encoder = new TextEncoder();
+  let cancelled = false;
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const keepAlive = () => {
+        if (cancelled) return;
+        try {
+          controller.enqueue(encoder.encode(": teamsix-keepalive\n\n"));
+        } catch {
+          cancelled = true;
+        }
+      };
+
+      // Open the stream immediately instead of waiting for ChatGPT Web to finish.
+      keepAlive();
+      const timer = setInterval(keepAlive, Math.max(500, heartbeatMs));
+      timer.unref?.();
+
+      void responsePromise.then(async response => {
+        clearInterval(timer);
+        if (cancelled) return;
+
+        const finalResponse = responseJsonToSse(response);
+        const reader = finalResponse.body?.getReader();
+        if (!reader) {
+          controller.close();
+          return;
+        }
+
+        try {
+          while (!cancelled) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            controller.enqueue(chunk.value);
+          }
+          if (!cancelled) controller.close();
+        } catch (error) {
+          if (!cancelled) controller.error(error);
+        } finally {
+          reader.releaseLock();
+        }
+      }).catch(error => {
+        clearInterval(timer);
+        if (cancelled) return;
+        const id = `resp_${crypto.randomUUID().replaceAll("-", "")}`;
+        const failed = {
+          id,
+          object: "response",
+          created_at: Math.floor(Date.now() / 1000),
+          status: "failed",
+          model: "teamsix/chatgpt-web/high",
+          output: [],
+          error: {
+            type: "server_error",
+            code: "teamsix_stream_failure",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+        const finalResponse = responseJsonToSse(failed);
+        void (async () => {
+          const reader = finalResponse.body?.getReader();
+          if (!reader) {
+            controller.close();
+            return;
+          }
+          try {
+            while (!cancelled) {
+              const chunk = await reader.read();
+              if (chunk.done) break;
+              controller.enqueue(chunk.value);
+            }
+            if (!cancelled) controller.close();
+          } catch (streamError) {
+            if (!cancelled) controller.error(streamError);
+          } finally {
+            reader.releaseLock();
+          }
+        })();
+      });
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+      "x-teamsix-streaming-mode": "buffered-with-keepalive",
+    },
+  });
+}

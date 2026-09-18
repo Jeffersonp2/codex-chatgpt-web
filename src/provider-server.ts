@@ -5,7 +5,7 @@ import { loadProviderRuntimeSettings, providerEndpoint } from "./provider-config
 import { VERSION } from "./version";
 import { BridgeEngine } from "../teamsix-ai-bridge/src/bridge-engine";
 import { mapTeamsixModelToUpstream } from "../teamsix-ai-bridge/src/request-normalizer";
-import { responseJsonToSse } from "../teamsix-ai-bridge/src/sse";
+import { responsePromiseToSse } from "../teamsix-ai-bridge/src/sse";
 
 export interface ProviderServerOptions {
   host?: "127.0.0.1";
@@ -219,14 +219,13 @@ export function startProviderServer(
         let raw: unknown;
         try { raw = await req.json(); }
         catch { return jsonError(400, "invalid_json", "Request body must be valid JSON"); }
-        const result = await engine.run(raw);
-        if (result.streamRequested) {
-          const response = responseJsonToSse(result.payload);
-          response.headers.set("x-teamsix-thread-id", result.threadId);
-          response.headers.set("x-teamsix-turn-id", result.turnId);
-          response.headers.set("x-teamsix-native-codex-identity", String(result.nativeCodexIdentity));
-          return response;
+        const streamRequested = (raw as Record<string, unknown>)?.stream === true;
+        if (streamRequested) {
+          const resultPromise = engine.run(raw);
+          return responsePromiseToSse(resultPromise.then(result => result.payload));
         }
+
+        const result = await engine.run(raw);
         return Response.json(result.payload, {
           status: result.status,
           headers: {

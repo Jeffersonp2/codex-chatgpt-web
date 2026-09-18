@@ -26,4 +26,6 @@ test("TEAMSIX browser execution is hard-wired to normal chat", () => {
   expect(prompt).toContain("if (parsed._teamsixChatMode) return undefined;");
   expect(prompt).toContain("Use ChatGPT's native image-generation capability in this normal chat");
   expect(prompt).toContain("Do not ask the user to provide a reference or target image");
+  expect(prompt).toContain("TEAMSIX itself owns the tool relay for this routed turn");
+  expect(prompt).toContain("<teamsix_tool_contract>");
 });

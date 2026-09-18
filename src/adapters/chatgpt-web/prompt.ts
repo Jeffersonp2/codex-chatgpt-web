@@ -507,6 +507,14 @@ export function compileChatGptWebPrompt(
       "Do not call local or ChatGPT-native tools. Summarize only the supplied task context according to the final compaction instruction.",
       "Return only the checkpoint summary that the next model needs to resume the task.",
       ]
+    : parsed._teamsixChatMode
+    ? [
+      "This request is routed through TEAMSIX. Local Codex/client tools are available through the developer-provided <teamsix_tool_contract> when that contract is present in the supplied task context.",
+      "If the latest active request requires a local file, command, process, workspace inspection, or computer mutation and a <teamsix_tool_contract> is present, follow that contract exactly instead of claiming that local tools are unavailable.",
+      "Do not tell the user to open MCP, connect a Full harness, or enable another local bridge. TEAMSIX itself owns the tool relay for this routed turn.",
+      "Use real tool results returned in later messages as evidence. Never fabricate a local effect before the tool result arrives.",
+      "For a from-scratch image request flagged by TEAMSIX, use ChatGPT's native image-generation capability in this normal chat; do not redirect that request to a Codex/client image tool.",
+    ]
     : mode.localTools
     ? [
       "For local work required by the task, use the attached Codex Native tools directly according to their declared descriptions and schemas.",
