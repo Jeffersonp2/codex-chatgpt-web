@@ -1181,6 +1181,8 @@ export interface BrowserTurn {
   modelId: string;
   reasoning?: string;
   chatMode?: ChatGptChatSurface;
+  /** Capture a generated image only when TEAMSIX positively identified an image-generation request. */
+  captureGeneratedImages?: boolean;
   capabilities: ChatGptWebCapabilities;
   prepare: () => Promise<CompiledChatGptWebPrompt & { release: () => void }>;
   prepareResume?: () => Promise<CompiledChatGptWebPrompt & { release: () => void }>;

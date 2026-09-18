@@ -22,6 +22,8 @@ export interface CodexParsedRequest {
   _opaqueMultiAgentV2Payload?: boolean;
   /** TEAMSIX browser surface selected by the local 9Router provider bridge. */
   _teamsixChatMode?: "normal" | "temporary";
+  /** Browser worker should capture a generated image from the current assistant turn. */
+  _teamsixImageGeneration?: boolean;
 }
 
 export interface CodexContext {

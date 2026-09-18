@@ -278,6 +278,25 @@ function isImageGenerationSpec(raw: unknown): boolean {
   return false;
 }
 
+function flattenInputText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(flattenInputText).filter(Boolean).join("\n");
+  const record = asRecord(value);
+  if (!record) return "";
+  if (typeof record.text === "string") return record.text;
+  if (record.content !== undefined) return flattenInputText(record.content);
+  return "";
+}
+
+function requestsImageGeneration(input: unknown): boolean {
+  const text = flattenInputText(input);
+  if (!text) return false;
+  const action = "(?:gere|gerar|crie|criar|faça|fazer|desenhe|desenhar|edite|editar|modifique|modificar|generate|create|draw|edit|modify)";
+  const subject = "(?:imagem|image|foto|picture|logo|arte|artwork)";
+  return new RegExp(`${action}[\\s\\S]{0,80}${subject}`, "i").test(text)
+    || new RegExp(`${subject}[\\s\\S]{0,50}${action}`, "i").test(text);
+}
+
 function collectToolSpecs(body: Record<string, unknown>): unknown[] {
   const specs: unknown[] = Array.isArray(body.tools) ? [...body.tools] : [];
   if (!Array.isArray(body.input)) return specs;
@@ -322,7 +341,7 @@ export function normalizeResponsesRequest(raw: unknown): NormalizedRequest {
     tools,
     ...(selection.chatModeOverride ? { modelChatMode: selection.chatModeOverride } : {}),
     ...(clientChatMode ? { clientChatMode } : {}),
-    imageGenerationRequested: specs.some(isImageGenerationSpec),
+    imageGenerationRequested: specs.some(isImageGenerationSpec) || requestsImageGeneration(body.input),
   };
 }
 

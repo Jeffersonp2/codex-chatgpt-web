@@ -25,6 +25,7 @@ interface RunMessage {
     modelId: string;
     reasoning?: string;
     chatMode?: "normal" | "temporary";
+    captureGeneratedImages?: boolean;
     capabilities: ChatGptWebCapabilities;
     nativeConnector?: boolean;
     resumeAvailable?: boolean;
@@ -158,6 +159,10 @@ async function run(message: RunMessage): Promise<void> {
     && message.turn.chatMode !== "temporary") {
     throw new Error("Browser helper chat mode is invalid");
   }
+  if (message.turn.captureGeneratedImages !== undefined
+    && typeof message.turn.captureGeneratedImages !== "boolean") {
+    throw new Error("Browser helper image capture flag is invalid");
+  }
   if (message.turn.resumeAvailable !== undefined && typeof message.turn.resumeAvailable !== "boolean") {
     throw new Error("Browser helper resume availability is invalid");
   }
@@ -217,6 +222,7 @@ async function run(message: RunMessage): Promise<void> {
     modelId: message.turn.modelId,
     reasoning: message.turn.reasoning,
     ...(message.turn.chatMode ? { chatMode: message.turn.chatMode } : {}),
+    ...(message.turn.captureGeneratedImages ? { captureGeneratedImages: true } : {}),
     capabilities: message.turn.capabilities,
     ...(message.turn.nativeConnector ? { nativeConnector: true } : {}),
     prepare: prepareSelected,

@@ -625,6 +625,8 @@ export function parseRequest(body: unknown): CodexParsedRequest {
   const teamsixChatMode = teamsixChatModeRaw === "normal" || teamsixChatModeRaw === "temporary"
     ? teamsixChatModeRaw
     : undefined;
+  const teamsixCapability = clientMetadata?.["x-teamsix-capability"];
+  const teamsixImageGeneration = teamsixCapability === "image";
 
   return {
     modelId: data.model,
@@ -637,5 +639,6 @@ export function parseRequest(body: unknown): CodexParsedRequest {
     ...(compactionRequest ? { _compactionRequest: true } : {}),
     ...(opaqueMultiAgentV2Payload ? { _opaqueMultiAgentV2Payload: true } : {}),
     ...(teamsixChatMode ? { _teamsixChatMode: teamsixChatMode } : {}),
+    ...(teamsixImageGeneration ? { _teamsixImageGeneration: true } : {}),
   };
 }

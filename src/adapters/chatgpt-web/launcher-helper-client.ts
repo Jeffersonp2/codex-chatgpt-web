@@ -283,6 +283,7 @@ export class LauncherBrowserHelperClient {
             modelId: turn.modelId,
             reasoning: turn.reasoning,
             ...(turn.chatMode ? { chatMode: turn.chatMode } : {}),
+            ...(turn.captureGeneratedImages ? { captureGeneratedImages: true } : {}),
             capabilities: turn.capabilities,
             ...(turn.nativeConnector ? { nativeConnector: true } : {}),
             ...(turn.prepareResume ? { resumeAvailable: true } : {}),

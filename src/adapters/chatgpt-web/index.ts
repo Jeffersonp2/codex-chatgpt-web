@@ -675,6 +675,7 @@ export function createChatGptWebAdapter(
         modelId: parsed.modelId,
         reasoning: parsed.options.reasoning,
         chatMode: parsed._teamsixChatMode ?? "temporary",
+        captureGeneratedImages: parsed._teamsixImageGeneration === true,
         capabilities: turnCapabilities,
         prepare: async () => ({
           ...compileChatGptWebPrompt(
@@ -746,6 +747,7 @@ export function createChatGptWebAdapter(
       modelId: parsed.modelId,
       reasoning: parsed.options.reasoning,
       chatMode: parsed._teamsixChatMode ?? "temporary",
+      captureGeneratedImages: parsed._teamsixImageGeneration === true,
       capabilities: turnCapabilities,
       prepare: () => prepareWith(checkpointInput.parsed),
       ...(resumeInput ? { prepareResume: () => prepareWith(resumeInput) } : {}),
