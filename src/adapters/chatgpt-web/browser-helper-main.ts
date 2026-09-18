@@ -24,6 +24,7 @@ interface RunMessage {
     traceId: string;
     modelId: string;
     reasoning?: string;
+    chatMode?: "normal" | "temporary";
     capabilities: ChatGptWebCapabilities;
     nativeConnector?: boolean;
     resumeAvailable?: boolean;
@@ -152,6 +153,11 @@ async function run(message: RunMessage): Promise<void> {
     throw new Error("Browser helper turn identity is invalid");
   }
   if (abortControllers.has(message.id)) throw new Error(`Browser helper turn already exists: ${message.id}`);
+  if (message.turn.chatMode !== undefined
+    && message.turn.chatMode !== "normal"
+    && message.turn.chatMode !== "temporary") {
+    throw new Error("Browser helper chat mode is invalid");
+  }
   if (message.turn.resumeAvailable !== undefined && typeof message.turn.resumeAvailable !== "boolean") {
     throw new Error("Browser helper resume availability is invalid");
   }
@@ -210,6 +216,7 @@ async function run(message: RunMessage): Promise<void> {
     traceId: message.turn.traceId,
     modelId: message.turn.modelId,
     reasoning: message.turn.reasoning,
+    ...(message.turn.chatMode ? { chatMode: message.turn.chatMode } : {}),
     capabilities: message.turn.capabilities,
     ...(message.turn.nativeConnector ? { nativeConnector: true } : {}),
     prepare: prepareSelected,

@@ -619,6 +619,13 @@ export function parseRequest(body: unknown): CodexParsedRequest {
   Object.assign(options, parseTextControls(data.text));
   if (data.prompt_cache_key !== undefined) options.promptCacheKey = data.prompt_cache_key;
 
+  const rawClientMetadata = (data as unknown as { client_metadata?: unknown }).client_metadata;
+  const clientMetadata = isObj(rawClientMetadata) ? rawClientMetadata : undefined;
+  const teamsixChatModeRaw = clientMetadata?.["x-teamsix-chat-mode"];
+  const teamsixChatMode = teamsixChatModeRaw === "normal" || teamsixChatModeRaw === "temporary"
+    ? teamsixChatModeRaw
+    : undefined;
+
   return {
     modelId: data.model,
     ...(data.previous_response_id ? { previousResponseId: data.previous_response_id } : {}),
@@ -629,5 +636,6 @@ export function parseRequest(body: unknown): CodexParsedRequest {
     ...(replayedInputPrefixLength > 0 ? { _replayPrefixLen: replayedInputPrefixLength } : {}),
     ...(compactionRequest ? { _compactionRequest: true } : {}),
     ...(opaqueMultiAgentV2Payload ? { _opaqueMultiAgentV2Payload: true } : {}),
+    ...(teamsixChatMode ? { _teamsixChatMode: teamsixChatMode } : {}),
   };
 }

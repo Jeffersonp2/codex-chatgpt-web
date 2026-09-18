@@ -46,6 +46,7 @@ import {
 import { estimateCompiledChatGptWebInputTokens } from "./input-tokens";
 import {
   assertAuthenticatedChatGptPage,
+  assertNormalChatPage,
   assertTemporaryChatPage,
   CHATGPT_ASSISTANT_TURN_SELECTOR,
   CHATGPT_COMPLETION_ACTION_SELECTOR,
@@ -54,6 +55,7 @@ import {
   CHATGPT_EFFORT_ITEM_SELECTOR,
   CHATGPT_EFFORT_SLIDER_CONTAINER_SELECTOR,
   CHATGPT_STOP_BUTTON_SELECTOR,
+  CHATGPT_NORMAL_CHAT_URL,
   CHATGPT_TEMPORARY_CHAT_URL,
   CHATGPT_USER_TURN_SELECTOR,
   activateChatGptEffortMenu,
@@ -1172,10 +1174,13 @@ function withBrowserTurnAbort<T>(promise: Promise<T>, signal?: AbortSignal): Pro
   });
 }
 
+export type ChatGptChatSurface = "normal" | "temporary";
+
 export interface BrowserTurn {
   traceId: string;
   modelId: string;
   reasoning?: string;
+  chatMode?: ChatGptChatSurface;
   capabilities: ChatGptWebCapabilities;
   prepare: () => Promise<CompiledChatGptWebPrompt & { release: () => void }>;
   prepareResume?: () => Promise<CompiledChatGptWebPrompt & { release: () => void }>;
@@ -2620,37 +2625,51 @@ export class ChatGptBrowserWorker {
     );
   }
 
-  /** Put every browser operation on one fully hydrated Temporary Chat document. */
-  private async prepareTemporaryChatSurface(
+  /** Put a browser turn on the explicit ChatGPT surface selected by TEAMSIX. */
+  private async prepareChatSurface(
     page: Page,
+    chatMode: ChatGptChatSurface,
     captureDiagnostic?: (checkpoint: string) => Promise<void>,
   ): Promise<Locator> {
-    // Launcher verification refreshes its owned page before attaching Playwright so a newly added
-    // connector is present in the catalog. Navigating again here destroys that freshly hydrated
-    // document and made the first verification race a second SPA bootstrap. A leased turn starts on
-    // about:blank and therefore still performs exactly one navigation through this same method.
-    if (page.url() !== CHATGPT_TEMPORARY_CHAT_URL) {
-      await page.goto(CHATGPT_TEMPORARY_CHAT_URL, {
+    const target = chatMode === "normal" ? CHATGPT_NORMAL_CHAT_URL : CHATGPT_TEMPORARY_CHAT_URL;
+    if (page.url() !== target) {
+      await page.goto(target, {
         waitUntil: "domcontentloaded",
         timeout: 60_000,
       });
-      await captureDiagnostic?.("temporary-chat-navigation-complete");
+      await captureDiagnostic?.(
+        chatMode === "normal"
+          ? "normal-chat-navigation-complete"
+          : "temporary-chat-navigation-complete",
+      );
     }
     let composer: Locator;
     try {
       composer = await this.activeComposer(page);
     } catch {
-      throw new Error("ChatGPT web login is expired or the Temporary Chat surface is unavailable");
+      throw new Error(`ChatGPT web login is expired or the ${chatMode} chat surface is unavailable`);
     }
-    if (await dismissChatGptTemporaryChatOnboarding(page)) {
+    if (chatMode === "temporary" && await dismissChatGptTemporaryChatOnboarding(page)) {
       await captureDiagnostic?.("temporary-chat-onboarding-dismissed");
     }
     await captureDiagnostic?.("composer-ready");
     await throwIfChatGptSessionFailureAlert(page);
     await assertAuthenticatedChatGptPage(page);
-    await assertTemporaryChatPage(page);
+    if (chatMode === "normal") {
+      await assertNormalChatPage(page);
+      await captureDiagnostic?.("normal-chat-session-bound");
+    } else {
+      await assertTemporaryChatPage(page);
+    }
     await captureDiagnostic?.("session-verified");
     return composer;
+  }
+
+  private async prepareTemporaryChatSurface(
+    page: Page,
+    captureDiagnostic?: (checkpoint: string) => Promise<void>,
+  ): Promise<Locator> {
+    return this.prepareChatSurface(page, "temporary", captureDiagnostic);
   }
 
   private async waitForTurnDomMutation(page: Page, timeoutMs = 50): Promise<void> {
@@ -4788,14 +4807,20 @@ export class ChatGptBrowserWorker {
         );
       }
       if (!reuseConversation) {
+        const chatMode = turn.chatMode ?? "temporary";
         await this.runStage(
           turn.traceId,
-          "temporary_chat_preparation",
+          chatMode === "normal" ? "normal_chat_preparation" : "temporary_chat_preparation",
           browserStageTimeouts.temporaryChatPreparation,
-          () => this.prepareTemporaryChatSurface(
+          () => this.prepareChatSurface(
             page,
+            chatMode,
             checkpoint => diagnostics.capture(page, checkpoint),
           ),
+        );
+        await diagnostics.capture(
+          page,
+          chatMode === "normal" ? "chat-mode-normal" : "chat-mode-temporary",
         );
       }
       // A retained lease proves the connector binding, not the current model selection.
@@ -4955,8 +4980,9 @@ export class ChatGptBrowserWorker {
             browserStageTimeouts.temporaryChatPreparation,
             async () => {
               await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
-              await this.prepareTemporaryChatSurface(
+              await this.prepareChatSurface(
                 page,
+                turn.chatMode ?? "temporary",
                 checkpoint => diagnostics.capture(page, checkpoint),
               );
               mode = await this.selectModelAndEffort(

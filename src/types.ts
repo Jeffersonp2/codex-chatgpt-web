@@ -20,6 +20,8 @@ export interface CodexParsedRequest {
    * before constructing the browser adapter.
    */
   _opaqueMultiAgentV2Payload?: boolean;
+  /** TEAMSIX browser surface selected by the local 9Router provider bridge. */
+  _teamsixChatMode?: "normal" | "temporary";
 }
 
 export interface CodexContext {
