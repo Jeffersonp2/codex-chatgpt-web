@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { TeamsixChatMode } from "./config";
 
 export type TeamsixToolWireType = "function" | "custom" | "tool_search";
 
@@ -32,6 +33,7 @@ export interface BridgeSession {
   updatedAt: number;
   tools: ToolDefinition[];
   pendingCalls: Map<string, PendingToolCall>;
+  chatMode?: Exclude<TeamsixChatMode, "auto">;
 }
 
 export interface TurnIdentity {
@@ -92,6 +94,13 @@ export class SessionStore {
     session.updatedAt = Date.now();
   }
 
+  setChatMode(threadId: string, chatMode: Exclude<TeamsixChatMode, "auto">): void {
+    const session = this.sessions.get(threadId);
+    if (!session) return;
+    session.chatMode = chatMode;
+    session.updatedAt = Date.now();
+  }
+
   addPendingCall(threadId: string, call: PendingToolCall): void {
     const session = this.sessions.get(threadId);
     if (!session) return;
@@ -109,13 +118,14 @@ export class SessionStore {
     return call;
   }
 
-  summary(): Array<{ threadId: string; lastTurnId: string; toolCount: number; pendingCalls: number; updatedAt: number }> {
+  summary(): Array<{ threadId: string; lastTurnId: string; toolCount: number; pendingCalls: number; chatMode?: "normal" | "temporary"; updatedAt: number }> {
     this.cleanup();
     return [...this.sessions.values()].map(session => ({
       threadId: session.threadId,
       lastTurnId: session.lastTurnId,
       toolCount: session.tools.length,
       pendingCalls: session.pendingCalls.size,
+      ...(session.chatMode ? { chatMode: session.chatMode } : {}),
       updatedAt: session.updatedAt,
     }));
   }

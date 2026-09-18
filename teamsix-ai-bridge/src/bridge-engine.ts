@@ -1,4 +1,4 @@
-import type { BridgeConfig } from "./config";
+import type { BridgeConfig, TeamsixChatMode } from "./config";
 import { PluginHub } from "./plugin-hub";
 import { mapTeamsixModelToUpstream, normalizeResponsesRequest } from "./request-normalizer";
 import { SessionStore, newMessageId, type ToolDefinition } from "./session-store";
@@ -9,6 +9,13 @@ import {
   synthesizeFunctionCallResponse,
   translateToolOutputsForBrowser,
 } from "./tool-bridge";
+
+type ResolvedChatMode = Exclude<TeamsixChatMode, "auto">;
+
+function resolveChatMode(modelOverride: TeamsixChatMode | undefined, clientOverride: TeamsixChatMode | undefined, configured: TeamsixChatMode): ResolvedChatMode {
+  const selected = modelOverride ?? clientOverride ?? configured;
+  return selected === "temporary" ? "temporary" : "normal";
+}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -130,6 +137,7 @@ export class BridgeEngine {
       upstream_ok: upstreamOk,
       upstream,
       tools_mode: this.config.toolsMode,
+      default_chat_mode: this.config.chatMode,
       plugins: this.plugins.listPlugins(),
       sessions: this.sessions.summary().length,
     };
@@ -161,6 +169,13 @@ export class BridgeEngine {
 
     const streamRequested = normalized.body.stream === true;
     const session = this.sessions.resolve(normalized.identity);
+    const continuingToolRound = session.pendingCalls.size > 0
+      || (Array.isArray(normalized.body.input) && normalized.body.input.some(raw => isClientToolOutput(asRecord(raw))));
+    const resolvedChatMode = continuingToolRound && session.chatMode
+      ? session.chatMode
+      : resolveChatMode(normalized.modelChatMode, normalized.clientChatMode, this.config.chatMode);
+    this.sessions.setChatMode(session.threadId, resolvedChatMode);
+
     const pluginTools = this.config.toolsMode === "bridge" ? this.plugins.listTools() : [];
     const incomingTools = normalized.tools;
     const allTools: ToolDefinition[] = [...incomingTools, ...pluginTools];
@@ -169,6 +184,11 @@ export class BridgeEngine {
     const body = structuredClone(normalized.body);
     body.model = upstreamModel;
     body.stream = false;
+    body.client_metadata = {
+      ...(asRecord(body.client_metadata) ?? {}),
+      "x-teamsix-chat-mode": resolvedChatMode,
+      ...(normalized.imageGenerationRequested ? { "x-teamsix-capability": "image" } : {}),
+    };
 
     if (this.config.toolsMode === "bridge") {
       let input = translateToolOutputsForBrowser(body.input, session, normalized.identity.turnId);

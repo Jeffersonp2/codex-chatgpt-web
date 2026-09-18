@@ -1,3 +1,5 @@
+export type TeamsixChatMode = "auto" | "normal" | "temporary";
+
 export interface BridgeConfig {
   host: string;
   port: number;
@@ -6,6 +8,7 @@ export interface BridgeConfig {
   requestTimeoutMs: number;
   sessionTtlMs: number;
   toolsMode: "bridge" | "passthrough" | "off";
+  chatMode: TeamsixChatMode;
   dashboard: boolean;
 }
 
@@ -27,6 +30,12 @@ function envBool(name: string, fallback: boolean): boolean {
   throw new Error(`${name} must be true/false`);
 }
 
+function envChatMode(): TeamsixChatMode {
+  const raw = process.env.TEAMSIX_CHAT_MODE?.trim().toLowerCase() || "auto";
+  if (raw === "auto" || raw === "normal" || raw === "temporary") return raw;
+  throw new Error("TEAMSIX_CHAT_MODE must be auto, normal, or temporary");
+}
+
 function envToolsMode(): BridgeConfig["toolsMode"] {
   const raw = process.env.TEAMSIX_TOOLS_MODE?.trim().toLowerCase() || "bridge";
   if (raw === "bridge" || raw === "passthrough" || raw === "off") return raw;
@@ -42,6 +51,7 @@ export function loadBridgeConfig(): BridgeConfig {
     requestTimeoutMs: envInt("TEAMSIX_REQUEST_TIMEOUT_MS", 600_000, 1_000, 3_600_000),
     sessionTtlMs: envInt("TEAMSIX_SESSION_TTL_MS", 21_600_000, 60_000, 86_400_000),
     toolsMode: envToolsMode(),
+    chatMode: envChatMode(),
     dashboard: envBool("TEAMSIX_DASHBOARD", true),
   };
 }

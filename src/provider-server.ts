@@ -36,6 +36,12 @@ function envInt(name: string, fallback: number, min: number, max: number): numbe
   return value;
 }
 
+function chatMode(): "auto" | "normal" | "temporary" {
+  const raw = process.env.TEAMSIX_CHAT_MODE?.trim().toLowerCase() || "auto";
+  if (raw === "auto" || raw === "normal" || raw === "temporary") return raw;
+  throw new Error("TEAMSIX_CHAT_MODE must be auto, normal, or temporary");
+}
+
 function toolsMode(): "bridge" | "passthrough" | "off" {
   const raw = process.env.TEAMSIX_TOOLS_MODE?.trim().toLowerCase() || "bridge";
   if (raw === "bridge" || raw === "passthrough" || raw === "off") return raw;
@@ -102,6 +108,7 @@ export function startProviderServer(
     requestTimeoutMs: envInt("TEAMSIX_REQUEST_TIMEOUT_MS", 600_000, 1_000, 3_600_000),
     sessionTtlMs: envInt("TEAMSIX_SESSION_TTL_MS", 21_600_000, 60_000, 86_400_000),
     toolsMode: toolsMode(),
+    chatMode: chatMode(),
     dashboard: true,
   });
 

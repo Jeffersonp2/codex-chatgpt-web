@@ -1,3 +1,4 @@
+import type { TeamsixChatMode } from "./config";
 import { newMessageId, newThreadId, newTurnId, type ToolDefinition, type TurnIdentity } from "./session-store";
 
 export interface NormalizedRequest {
@@ -5,6 +6,9 @@ export interface NormalizedRequest {
   identity: TurnIdentity;
   nativeCodexIdentity: boolean;
   tools: ToolDefinition[];
+  modelChatMode?: TeamsixChatMode;
+  clientChatMode?: TeamsixChatMode;
+  imageGenerationRequested: boolean;
 }
 
 interface CodexMetadata {
@@ -16,6 +20,23 @@ interface CodexMetadata {
 }
 
 const DEFAULT_FUNCTION_NAMESPACE = "functions";
+const CHAT_MODE_SUFFIX = /@(auto|normal|temporary)$/i;
+
+function parseChatMode(value: unknown): TeamsixChatMode | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "auto" || normalized === "normal" || normalized === "temporary" ? normalized : undefined;
+}
+
+export function parseTeamsixModelSelection(model: string): { model: string; chatModeOverride?: TeamsixChatMode } {
+  let trimmed = model.trim();
+  const suffix = trimmed.match(CHAT_MODE_SUFFIX);
+  const chatModeOverride = suffix ? parseChatMode(suffix[1]) : undefined;
+  if (suffix) trimmed = trimmed.slice(0, suffix.index).trim();
+  if (trimmed.startsWith("teamsix/")) trimmed = trimmed.slice("teamsix/".length);
+  else if (trimmed.startsWith("cgw/")) trimmed = trimmed.slice("cgw/".length);
+  return { model: trimmed, ...(chatModeOverride ? { chatModeOverride } : {}) };
+}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -242,6 +263,21 @@ function flattenToolSpecs(specs: unknown[]): ToolDefinition[] {
   });
 }
 
+function isImageGenerationSpec(raw: unknown): boolean {
+  const tool = asRecord(raw);
+  if (!tool) return false;
+  if (tool.type === "image_generation") return true;
+  if (typeof tool.name === "string" && ["image_gen", "imagegen", "image_generation"].includes(tool.name.trim())) return true;
+  if (tool.type === "namespace" && Array.isArray(tool.tools)) {
+    if (tool.name === "image_gen") return true;
+    return tool.tools.some(inner => {
+      const child = asRecord(inner);
+      return typeof child?.name === "string" && child.name.trim() === "imagegen";
+    });
+  }
+  return false;
+}
+
 function collectToolSpecs(body: Record<string, unknown>): unknown[] {
   const specs: unknown[] = Array.isArray(body.tools) ? [...body.tools] : [];
   if (!Array.isArray(body.input)) return specs;
@@ -273,19 +309,23 @@ export function normalizeResponsesRequest(raw: unknown): NormalizedRequest {
 
   body.input = normalizeInput(body.input, identity.turnId, native);
   body.stream = body.stream === true;
-  const tools = flattenToolSpecs(collectToolSpecs(body));
+  const specs = collectToolSpecs(body);
+  const tools = flattenToolSpecs(specs);
+  const selection = typeof body.model === "string" ? parseTeamsixModelSelection(body.model) : { model: "" };
+  const clientMetadata = asRecord(body.client_metadata);
+  const clientChatMode = parseChatMode(clientMetadata?.["x-teamsix-chat-mode"]);
 
   return {
     body,
     identity,
     nativeCodexIdentity: native,
     tools,
+    ...(selection.chatModeOverride ? { modelChatMode: selection.chatModeOverride } : {}),
+    ...(clientChatMode ? { clientChatMode } : {}),
+    imageGenerationRequested: specs.some(isImageGenerationSpec),
   };
 }
 
 export function mapTeamsixModelToUpstream(model: string): string {
-  const trimmed = model.trim();
-  if (trimmed.startsWith("teamsix/")) return trimmed.slice("teamsix/".length);
-  if (trimmed.startsWith("cgw/")) return trimmed.slice("cgw/".length);
-  return trimmed;
+  return parseTeamsixModelSelection(model).model;
 }
