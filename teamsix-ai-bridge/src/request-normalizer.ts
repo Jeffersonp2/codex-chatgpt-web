@@ -131,6 +131,15 @@ function normalizeInput(
   });
 }
 
+function isImageGenerationToolName(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase().replaceAll(".", "__");
+  return normalized === "image_gen"
+    || normalized === "imagegen"
+    || normalized === "image_generation"
+    || normalized === "image_gen__imagegen";
+}
+
 function namespaceName(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() && value !== DEFAULT_FUNCTION_NAMESPACE
     ? value.trim()
@@ -214,8 +223,8 @@ function flattenToolSpecs(specs: unknown[]): ToolDefinition[] {
     // relay image_gen back to Codex as a client-executed local tool.
     const directName = typeof tool.name === "string" ? tool.name.trim() : "";
     if (tool.type === "image_generation"
-      || (tool.type === "namespace" && directName === "image_gen")
-      || (tool.type === "function" && ["image_gen", "imagegen", "image_generation"].includes(directName))) {
+      || (tool.type === "namespace" && isImageGenerationToolName(directName))
+      || (tool.type === "function" && isImageGenerationToolName(directName))) {
       continue;
     }
 
@@ -279,9 +288,9 @@ function isImageGenerationSpec(raw: unknown): boolean {
   const tool = asRecord(raw);
   if (!tool) return false;
   if (tool.type === "image_generation") return true;
-  if (typeof tool.name === "string" && ["image_gen", "imagegen", "image_generation"].includes(tool.name.trim())) return true;
+  if (isImageGenerationToolName(tool.name)) return true;
   if (tool.type === "namespace" && Array.isArray(tool.tools)) {
-    if (tool.name === "image_gen") return true;
+    if (isImageGenerationToolName(tool.name)) return true;
     return tool.tools.some(inner => {
       const child = asRecord(inner);
       return typeof child?.name === "string" && child.name.trim() === "imagegen";
