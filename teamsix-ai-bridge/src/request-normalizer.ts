@@ -31,7 +31,9 @@ function parseChatMode(value: unknown): TeamsixChatMode | undefined {
 export function parseTeamsixModelSelection(model: string): { model: string; chatModeOverride?: TeamsixChatMode } {
   let trimmed = model.trim();
   const suffix = trimmed.match(CHAT_MODE_SUFFIX);
-  const chatModeOverride = suffix ? parseChatMode(suffix[1]) : undefined;
+  const requestedChatMode = suffix ? parseChatMode(suffix[1]) : undefined;
+  // @auto/@temporary remain accepted as compatibility aliases, but TEAMSIX is normal-chat only.
+  const chatModeOverride = requestedChatMode ? "normal" as const : undefined;
   if (suffix) trimmed = trimmed.slice(0, suffix.index).trim();
   if (trimmed.startsWith("teamsix/")) trimmed = trimmed.slice("teamsix/".length);
   else if (trimmed.startsWith("cgw/")) trimmed = trimmed.slice("cgw/".length);
@@ -332,7 +334,8 @@ export function normalizeResponsesRequest(raw: unknown): NormalizedRequest {
   const tools = flattenToolSpecs(specs);
   const selection = typeof body.model === "string" ? parseTeamsixModelSelection(body.model) : { model: "" };
   const clientMetadata = asRecord(body.client_metadata);
-  const clientChatMode = parseChatMode(clientMetadata?.["x-teamsix-chat-mode"]);
+  const requestedClientChatMode = parseChatMode(clientMetadata?.["x-teamsix-chat-mode"]);
+  const clientChatMode = requestedClientChatMode ? "normal" as const : undefined;
 
   return {
     body,

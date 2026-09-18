@@ -36,10 +36,12 @@ function envInt(name: string, fallback: number, min: number, max: number): numbe
   return value;
 }
 
-function chatMode(): "auto" | "normal" | "temporary" {
-  const raw = process.env.TEAMSIX_CHAT_MODE?.trim().toLowerCase() || "auto";
-  if (raw === "auto" || raw === "normal" || raw === "temporary") return raw;
-  throw new Error("TEAMSIX_CHAT_MODE must be auto, normal, or temporary");
+function chatMode(): "normal" {
+  const raw = process.env.TEAMSIX_CHAT_MODE?.trim().toLowerCase();
+  if (raw && raw !== "auto" && raw !== "normal" && raw !== "temporary") {
+    throw new Error("TEAMSIX_CHAT_MODE must be auto, normal, or temporary");
+  }
+  return "normal";
 }
 
 function toolsMode(): "bridge" | "passthrough" | "off" {

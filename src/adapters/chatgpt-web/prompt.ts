@@ -406,6 +406,9 @@ export function chatGptReadOnlyContextWarning(
   parsed: CodexParsedRequest,
   capabilities: ChatGptWebCapabilities,
 ): string | undefined {
+  // TEAMSIX owns local-tool relay outside the embedded browser adapter. The legacy MCP/Full
+  // harness warning is incorrect for TEAMSIX and must never be surfaced to its users.
+  if (parsed._teamsixChatMode) return undefined;
   if (isChatGptWebZeroRiskBackendModel(parsed.modelId)) return undefined;
   const mode = resolveChatGptWebModelMode(parsed.modelId, parsed.options.reasoning, capabilities);
   if (mode.localTools) return undefined;

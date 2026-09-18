@@ -31,9 +31,13 @@ function envBool(name: string, fallback: boolean): boolean {
 }
 
 function envChatMode(): TeamsixChatMode {
-  const raw = process.env.TEAMSIX_CHAT_MODE?.trim().toLowerCase() || "auto";
-  if (raw === "auto" || raw === "normal" || raw === "temporary") return raw;
-  throw new Error("TEAMSIX_CHAT_MODE must be auto, normal, or temporary");
+  const raw = process.env.TEAMSIX_CHAT_MODE?.trim().toLowerCase();
+  if (raw && raw !== "auto" && raw !== "normal" && raw !== "temporary") {
+    throw new Error("TEAMSIX_CHAT_MODE must be auto, normal, or temporary");
+  }
+  // TEAMSIX routed turns intentionally never use Temporary Chat. Keep legacy values accepted
+  // so old 9Router configs continue to start, but always resolve the provider to normal chat.
+  return "normal";
 }
 
 function envToolsMode(): BridgeConfig["toolsMode"] {

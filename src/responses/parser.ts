@@ -622,8 +622,10 @@ export function parseRequest(body: unknown): CodexParsedRequest {
   const rawClientMetadata = (data as unknown as { client_metadata?: unknown }).client_metadata;
   const clientMetadata = isObj(rawClientMetadata) ? rawClientMetadata : undefined;
   const teamsixChatModeRaw = clientMetadata?.["x-teamsix-chat-mode"];
-  const teamsixChatMode = teamsixChatModeRaw === "normal" || teamsixChatModeRaw === "temporary"
-    ? teamsixChatModeRaw
+  const teamsixChatMode = teamsixChatModeRaw === "normal"
+    || teamsixChatModeRaw === "temporary"
+    || teamsixChatModeRaw === "auto"
+    ? "normal" as const
     : undefined;
   const teamsixCapability = clientMetadata?.["x-teamsix-capability"];
   const teamsixImageGeneration = teamsixCapability === "image";

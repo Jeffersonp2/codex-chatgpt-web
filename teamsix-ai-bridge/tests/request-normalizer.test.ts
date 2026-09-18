@@ -96,9 +96,9 @@ describe("request normalizer", () => {
     expect(parseTeamsixModelSelection("teamsix/chatgpt-web/high@normal"))
       .toEqual({ model: "chatgpt-web/high", chatModeOverride: "normal" });
     expect(parseTeamsixModelSelection("teamsix/chatgpt-web/high@temporary"))
-      .toEqual({ model: "chatgpt-web/high", chatModeOverride: "temporary" });
+      .toEqual({ model: "chatgpt-web/high", chatModeOverride: "normal" });
     expect(parseTeamsixModelSelection("teamsix/chatgpt-web/high@auto"))
-      .toEqual({ model: "chatgpt-web/high", chatModeOverride: "auto" });
+      .toEqual({ model: "chatgpt-web/high", chatModeOverride: "normal" });
     expect(mapTeamsixModelToUpstream("teamsix/chatgpt-web/high@normal")).toBe("chatgpt-web/high");
   });
 
@@ -113,7 +113,7 @@ describe("request normalizer", () => {
         tools: [{ type: "function", name: "imagegen", parameters: { type: "object" } }],
       }],
     });
-    expect(normalized.clientChatMode).toBe("temporary");
+    expect(normalized.clientChatMode).toBe("normal");
     expect(normalized.imageGenerationRequested).toBe(true);
   });
 });

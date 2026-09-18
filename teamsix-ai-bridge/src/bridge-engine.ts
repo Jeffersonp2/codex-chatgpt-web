@@ -14,9 +14,14 @@ import {
 
 type ResolvedChatMode = Exclude<TeamsixChatMode, "auto">;
 
-function resolveChatMode(modelOverride: TeamsixChatMode | undefined, clientOverride: TeamsixChatMode | undefined, configured: TeamsixChatMode): ResolvedChatMode {
-  const selected = modelOverride ?? clientOverride ?? configured;
-  return selected === "temporary" ? "temporary" : "normal";
+function resolveChatMode(
+  _modelOverride: TeamsixChatMode | undefined,
+  _clientOverride: TeamsixChatMode | undefined,
+  _configured: TeamsixChatMode,
+): ResolvedChatMode {
+  // Normal chat is a hard safety/stability invariant for TEAMSIX routed turns.
+  // 9Router still selects the provider/model; it no longer selects Temporary Chat.
+  return "normal";
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

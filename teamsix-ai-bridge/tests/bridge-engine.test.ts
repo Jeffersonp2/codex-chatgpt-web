@@ -8,7 +8,7 @@ const config = {
   requestTimeoutMs: 1_000,
   sessionTtlMs: 60_000,
   toolsMode: "bridge" as const,
-  chatMode: "auto" as const,
+  chatMode: "normal" as const,
   dashboard: true,
 };
 
